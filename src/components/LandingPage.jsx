@@ -11,12 +11,16 @@ function LandingPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [showMascot, setShowMascot] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [registerForm, setRegisterForm] = useState({ 
-    email: '', 
-    password: '', 
-    firstName: '', 
-    lastName: '', 
-    telefono: '' 
+  const [registerForm, setRegisterForm] = useState({
+    email: '',
+    password: '',
+    firstName: '',
+    lastName: '',
+    telefono: '',
+    documento: '',
+    tipoDocumentoId: 'CC',
+    direccion: '',
+    ciudad: '',
   });
   const [registerError, setRegisterError] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState(false);
@@ -380,7 +384,7 @@ function LandingPage() {
                 setShowRegisterModal(false);
                 setRegisterError('');
                 setRegisterSuccess(false);
-                setRegisterForm({ email: '', password: '', firstName: '', lastName: '', telefono: '' });
+                setRegisterForm({ email: '', password: '', firstName: '', lastName: '', telefono: '', documento: '', tipoDocumentoId: 'CC', direccion: '', ciudad: '' });
               }}
               className="absolute right-4 top-4 text-2xl text-slate-400 hover:text-slate-600"
             >
@@ -409,13 +413,25 @@ function LandingPage() {
                   e.preventDefault();
                   setRegisterError('');
                   setIsSubmitting(true);
-                  
+
                   try {
-                    const response = await axiosClient.post('/auth/register-client', registerForm);
+                    await axiosClient.post('/auth/register-client', {
+                      email: registerForm.email,
+                      password: registerForm.password,
+                      firstName: registerForm.firstName,
+                      lastName: registerForm.lastName,
+                      telefono: registerForm.telefono,
+                      documento: registerForm.documento,
+                      tipoDocumento: registerForm.tipoDocumentoId || 'CC',
+                      direccion: registerForm.direccion || '',
+                      ciudad: registerForm.ciudad || '',
+                    });
+
                     setRegisterSuccess(true);
                   } catch (error) {
                     setRegisterError(
-                      error.response?.data?.error || 
+                      error.response?.data?.error ||
+                      error.message ||
                       'Error al crear la cuenta. Intenta nuevamente.'
                     );
                   } finally {
@@ -466,6 +482,27 @@ function LandingPage() {
                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                     />
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="N° documento"
+                      required
+                      value={registerForm.documento}
+                      onChange={(e) => setRegisterForm({ ...registerForm, documento: e.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                    <select
+                      value={registerForm.tipoDocumentoId}
+                      onChange={(e) => setRegisterForm({ ...registerForm, tipoDocumentoId: e.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    >
+                      <option value="CC">Cédula (CC)</option>
+                      <option value="CE">Cédula Extranjería (CE)</option>
+                      <option value="NIT">NIT</option>
+                      <option value="TI">Tarjeta Identidad (TI)</option>
+                      <option value="PASAPORTE">Pasaporte</option>
+                    </select>
+                  </div>
                   <input
                     type="tel"
                     placeholder="Teléfono (opcional)"
@@ -473,6 +510,22 @@ function LandingPage() {
                     onChange={(e) => setRegisterForm({ ...registerForm, telefono: e.target.value })}
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                   />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Dirección (opcional)"
+                      value={registerForm.direccion}
+                      onChange={(e) => setRegisterForm({ ...registerForm, direccion: e.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Ciudad (opcional)"
+                      value={registerForm.ciudad}
+                      onChange={(e) => setRegisterForm({ ...registerForm, ciudad: e.target.value })}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                  </div>
                 </div>
                 
                 <button
@@ -497,21 +550,7 @@ function LandingPage() {
 
       {whatsappLink && (
         <div className="fixed bottom-16 right-6 z-50 flex items-end gap-3">
-          <div className="relative">
-            <img
-              src="/washo.png"
-              alt="Washo"
-              className={`washo-idle h-20 w-auto select-none ${showMascot ? 'washo-pop' : ''}`}
-            />
-            {showMascot && (
-              <div className="mascot-bubble mascot-bubble--left">
-                <div>
-                  <p className="text-xs font-semibold text-slate-900">Escribenos por WhatsApp</p>
-                  <p className="text-[11px] text-slate-500">Respondemos en minutos</p>
-                </div>
-              </div>
-            )}
-          </div>
+          <div className="relative"></div>
           <a
             href={whatsappLink}
             className="whatsapp-pulse flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-2xl transition hover:-translate-y-1"

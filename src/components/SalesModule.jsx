@@ -8,12 +8,7 @@ const SalesModule = () => {
   const can = (c) => permissions.includes(c);
   const [ventas, setVentas] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [servicios, setServicios] = useState([]);
-  // Tab activa en el buscador de ítems: 'PRODUCTO' | 'SERVICIO'
-  const [itemTab, setItemTab] = useState('PRODUCTO');
-  const [servicioCodeInput, setServicioCodeInput] = useState("");
-  const [showServicioSearch, setShowServicioSearch] = useState(false);
-  const [servicioFilter, setServicioFilter] = useState("");
+
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -51,7 +46,6 @@ const SalesModule = () => {
   useEffect(() => {
     cargarVentas();
     cargarProductos();
-    cargarServicios();
   }, []);
 
   const cargarVentas = async () => {
@@ -73,16 +67,6 @@ const SalesModule = () => {
       setProductos(data);
     } catch (err) {
       console.error("Error al cargar productos:", err);
-    }
-  };
-
-  const cargarServicios = async () => {
-    try {
-      const response = await api.get("/api/servicios/activos");
-      const data = Array.isArray(response.data) ? response.data : [];
-      setServicios(data);
-    } catch (err) {
-      console.error("Error al cargar servicios:", err);
     }
   };
 
@@ -176,36 +160,6 @@ const SalesModule = () => {
         productName: producto.name,
         cantidad: 1,
         precioUnitario: producto.price || 0
-      };
-
-      return { ...prev, items: [...prev.items, nuevoItem] };
-    });
-  };
-
-  const addServicioToItems = (servicio) => {
-    setFormulario((prev) => {
-      const existing = prev.items.find(
-        (item) => item.tipoItem === 'SERVICIO' && String(item.servicioId) === String(servicio.id)
-      );
-
-      if (existing) {
-        return {
-          ...prev,
-          items: prev.items.map((item) =>
-            item.tipoItem === 'SERVICIO' && String(item.servicioId) === String(servicio.id)
-              ? { ...item, cantidad: parseInt(item.cantidad || 0) + 1 }
-              : item
-          )
-        };
-      }
-
-      const nuevoItem = {
-        id: `S-${servicio.id}-${Date.now()}`,
-        tipoItem: 'SERVICIO',
-        servicioId: servicio.id,
-        productName: servicio.nombre,   // Reusa el campo display para la tabla
-        cantidad: 1,
-        precioUnitario: servicio.precioBase || 0
       };
 
       return { ...prev, items: [...prev.items, nuevoItem] };
@@ -381,20 +335,7 @@ const SalesModule = () => {
       }
 
       for (const item of formulario.items) {
-        if (item.tipoItem === 'SERVICIO') {
-          // Servicios: solo validar que exista y la cantidad
-          if (!item.servicioId) {
-            setError("Hay servicios inválidos en la venta");
-            setLoading(false);
-            return;
-          }
-          if (!item.cantidad || item.cantidad <= 0) {
-            setError("La cantidad debe ser mayor a 0");
-            setLoading(false);
-            return;
-          }
-        } else {
-          // Productos físicos: validar stock
+        {
           if (!item.productId) {
             setError("Hay productos inválidos en la venta");
             setLoading(false);
@@ -425,9 +366,8 @@ const SalesModule = () => {
         // usuarioUsername es ignorado por el backend — se toma del JWT
         observaciones: formulario.observaciones,
         detalles: formulario.items.map((item) => ({
-          productId: item.tipoItem === 'SERVICIO' ? undefined : item.productId,
-          servicioId: item.tipoItem === 'SERVICIO' ? item.servicioId : undefined,
-          tipoItem: item.tipoItem || 'PRODUCTO',
+          productId: item.productId,
+          tipoItem: 'PRODUCTO',
           cantidad: item.cantidad,
           precioUnitario: item.precioUnitario,
         })),
@@ -457,7 +397,6 @@ const SalesModule = () => {
       // Recargar ventas y productos
       cargarVentas();
       cargarProductos();
-      cargarServicios();
       setMostrarFormulario(false);
 
       // Limpiar mensaje después de 3 segundos
@@ -634,86 +573,19 @@ const SalesModule = () => {
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
                   Codigo de producto *
                 </label>
-                {/* Tabs Producto / Servicio */}
-                <div className="flex border border-gray-300 rounded-lg overflow-hidden mb-1">
-                  <button
-                    type="button"
-                    onClick={() => setItemTab('PRODUCTO')}
-                    className={`flex-1 h-8 text-xs font-medium transition-colors ${
-                      itemTab === 'PRODUCTO'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    Producto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setItemTab('SERVICIO')}
-                    className={`flex-1 h-8 text-xs font-medium transition-colors ${
-                      itemTab === 'SERVICIO'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    Servicio
-                  </button>
-                </div>
-                {itemTab === 'PRODUCTO' ? (
-                  <>
-                    <input
-                      type="text"
-                      name="productCode"
-                      value={productCodeInput}
-                      onChange={(e) => setProductCodeInput(e.target.value)}
-                      onKeyDown={handleProductCodeKeyDown}
-                      className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:bg-gray-100 disabled:text-gray-500"
-                      placeholder="Codigo del producto"
-                      disabled={!clienteValido}
-                    />
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      {clienteValido ? "Enter agrega, F2 busca" : "Primero carga un cliente valido"}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex gap-1">
-                      <input
-                        type="text"
-                        value={servicioCodeInput}
-                        onChange={(e) => setServicioCodeInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (!clienteValido) { setError("Carga un cliente primero"); return; }
-                            const srv = servicios.find((s) =>
-                              String(s.id) === servicioCodeInput.trim() ||
-                              s.codigo?.toLowerCase() === servicioCodeInput.trim().toLowerCase()
-                            );
-                            if (!srv) { setError("Servicio no encontrado"); return; }
-                            addServicioToItems(srv);
-                            setServicioCodeInput("");
-                            setError("");
-                          }
-                        }}
-                        className="flex-1 h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
-                        placeholder="ID o código del servicio"
-                        disabled={!clienteValido}
-                      />
-                      <button
-                        type="button"
-                        disabled={!clienteValido}
-                        onClick={() => setShowServicioSearch(true)}
-                        className="h-9 px-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs disabled:bg-gray-300"
-                      >
-                        Buscar
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      {clienteValido ? "Enter agrega por ID/código, o usa Buscar" : "Primero carga un cliente"}
-                    </p>
-                  </>
-                )}
+                <input
+                  type="text"
+                  name="productCode"
+                  value={productCodeInput}
+                  onChange={(e) => setProductCodeInput(e.target.value)}
+                  onKeyDown={handleProductCodeKeyDown}
+                  className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:bg-gray-100 disabled:text-gray-500"
+                  placeholder="Codigo del producto"
+                  disabled={!clienteValido}
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {clienteValido ? "Enter agrega, F2 busca" : "Primero carga un cliente valido"}
+                </p>
               </div>
 
               {/* Lista de productos */}
@@ -736,13 +608,6 @@ const SalesModule = () => {
                         {formulario.items.map((item) => (
                           <tr key={item.id}>
                             <td className="px-3 py-2 text-sm">
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mr-1 ${
-                                item.tipoItem === 'SERVICIO'
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : 'bg-blue-100 text-blue-700'
-                              }`}>
-                                {item.tipoItem === 'SERVICIO' ? 'SRV' : 'PRD'}
-                              </span>
                               {item.productName}
                             </td>
                             <td className="px-3 py-2 text-sm text-gray-900">
@@ -1164,81 +1029,6 @@ const SalesModule = () => {
           </div>
         )}
 
-        {/* Modal búsqueda de servicios */}
-        {showServicioSearch && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-gradient-to-br from-slate-50 to-purple-50 rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200/70">
-              <div className="px-4 py-3 border-b border-slate-200/70 flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">
-                    Buscar Servicio
-                  </h3>
-                  <p className="text-xs text-slate-500">Doble click para agregar a la venta.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowServicioSearch(false)}
-                  className="text-slate-500 hover:text-slate-700 text-sm"
-                >
-                  Cerrar
-                </button>
-              </div>
-              <div className="p-4">
-                <input
-                  type="text"
-                  value={servicioFilter}
-                  onChange={(e) => setServicioFilter(e.target.value)}
-                  placeholder="Filtrar por nombre o código..."
-                  className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                <div className="max-h-[50vh] overflow-y-auto border border-slate-200 rounded-xl bg-white/70">
-                  <table className="w-full">
-                    <thead className="bg-slate-100/80 border-b border-slate-200 sticky top-0">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-900">Código</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-900">Nombre</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-900">Categoría</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-900">Precio base</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {servicios
-                        .filter((s) => {
-                          const q = servicioFilter.toLowerCase();
-                          return !q ||
-                            s.nombre?.toLowerCase().includes(q) ||
-                            s.codigo?.toLowerCase().includes(q);
-                        })
-                        .map((srv) => (
-                          <tr
-                            key={srv.id}
-                            onDoubleClick={() => {
-                              addServicioToItems(srv);
-                              setShowServicioSearch(false);
-                              setServicioFilter("");
-                            }}
-                            className="hover:bg-purple-50/60 cursor-pointer"
-                          >
-                            <td className="px-3 py-2 text-xs text-slate-900">{srv.codigo}</td>
-                            <td className="px-3 py-2 text-xs text-slate-900">{srv.nombre}</td>
-                            <td className="px-3 py-2 text-xs text-slate-900">{srv.categoriaServicio || "-"}</td>
-                            <td className="px-3 py-2 text-xs text-slate-900">${srv.precioBase}</td>
-                          </tr>
-                        ))}
-                      {servicios.length === 0 && (
-                        <tr>
-                          <td className="px-3 py-6 text-xs text-slate-500 text-center" colSpan={4}>
-                            No hay servicios activos. Créalos desde el módulo de Servicios.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

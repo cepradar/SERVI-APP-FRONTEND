@@ -12,10 +12,11 @@ Interfaz de usuario para el Sistema de Gestión de Inventario: autenticación JW
 2. [Configuración rápida](#configuración-rápida)
 3. [Variables de entorno](#variables-de-entorno)
 4. [Ejecución en desarrollo](#ejecución-en-desarrollo)
-5. [Build de producción](#build-de-producción)
-6. [Ejecución con Docker](#ejecución-con-docker)
-7. [Estructura del proyecto](#estructura-del-proyecto)
-8. [Módulos disponibles](#módulos-disponibles)
+5. [Acceso remoto con Cloudflare Tunnel](#acceso-remoto-con-cloudflare-tunnel)
+6. [Build de producción](#build-de-producción)
+7. [Ejecución con Docker](#ejecución-con-docker)
+8. [Estructura del proyecto](#estructura-del-proyecto)
+9. [Módulos disponibles](#módulos-disponibles)
 
 ---
 
@@ -55,15 +56,43 @@ La app estará disponible en `http://localhost:5173`.
 
 ## Variables de entorno
 
+### Archivos disponibles
+
+| Archivo | Se versiona | Propósito |
+|---|---|---|
+| `.env` | ✅ Sí | Valores base por defecto (localhost). No contiene secretos. |
+| `.env.development` | ✅ Sí | Defaults específicos para `npm run dev`. |
+| `.env.production` | ✅ Sí | Defaults específicos para `npm run build`. |
+| `.env.example` | ✅ Sí | Plantilla de documentación. Copiar a `.env.local`. |
+| `.env.local` | ❌ No | Overrides personales con mayor prioridad. **Nunca commitear.** |
+
+### Prioridad de carga (mayor a menor)
+
+```
+.env.local  >  .env.[mode].local  >  .env.[mode]  >  .env
+```
+
+### Variables disponibles
+
 | Variable | Descripción | Valor por defecto |
 |---|---|---|
-| `VITE_API_BASE_URL` | URL base del backend Spring Boot | `http://localhost:8080` |
-| `VITE_ALLOWED_HOSTS` | Hosts permitidos en el servidor dev Vite | `localhost,127.0.0.1` |
+| `VITE_API_BASE_URL` | URL base del backend Spring Boot (sin `/` al final) | `http://localhost:8080` |
 
-Los ficheros de entorno tienen la siguiente prioridad (Vite):
+### Casos de uso comunes
 
-1. `.env.local` *(no versionado — para desarrollo local)*
-2. `.env` *(valores base versionados)*
+```bash
+# Desarrollo local (backend en el mismo equipo)
+VITE_API_BASE_URL=http://localhost:8080
+
+# Acceso desde la LAN (mismo WiFi, sin tunnel)
+VITE_API_BASE_URL=http://192.168.1.X:8080
+
+# Acceso remoto con Cloudflare Tunnel
+VITE_API_BASE_URL=https://mi-tunnel.trycloudflare.com
+
+# Producción
+VITE_API_BASE_URL=https://api.mi-empresa.com
+```
 
 ---
 
@@ -74,7 +103,59 @@ npm install
 npm run dev
 ```
 
-La aplicación se recarga automáticamente ante cualquier cambio.
+La app se recarga automáticamente ante cualquier cambio.
+
+### Acceso desde dispositivos de la LAN
+
+El servidor Vite escucha en `0.0.0.0:5173`. Accede desde otro dispositivo en la misma red con:
+
+```
+http://IP_DEL_HOST:5173
+```
+
+---
+
+## Acceso remoto con Cloudflare Tunnel
+
+Cloudflare Tunnel permite exponer el frontend y/o el backend a Internet sin abrir puertos en el router.
+
+### Configuración del frontend
+
+El servidor de desarrollo ya está configurado para aceptar cualquier hostname:
+
+```js
+// vite.config.js
+server: {
+  host: '0.0.0.0',
+  allowedHosts: true,   // ← permite dominios Cloudflare Tunnel
+  cors: true,
+}
+```
+
+### Flujo de trabajo con tunnel
+
+1. Iniciar el tunnel del **backend** (Spring Boot):
+   ```bash
+   cloudflared tunnel --url http://localhost:8080
+   # → Obtendrás una URL tipo: https://xxxx-yyyy.trycloudflare.com
+   ```
+
+2. Copiar esa URL a `.env.local`:
+   ```
+   VITE_API_BASE_URL=https://xxxx-yyyy.trycloudflare.com
+   ```
+
+3. *(Opcional)* Iniciar un segundo tunnel para el **frontend**:
+   ```bash
+   cloudflared tunnel --url http://localhost:5173
+   ```
+
+4. Arrancar el frontend:
+   ```bash
+   npm run dev
+   ```
+
+> **Nota:** Los tunnels gratuitos de Cloudflare generan una URL diferente en cada reinicio. Actualiza `.env.local` cada vez que reinicies el tunnel del backend.
 
 ---
 
@@ -82,10 +163,16 @@ La aplicación se recarga automáticamente ante cualquier cambio.
 
 ```bash
 npm run build        # genera la carpeta dist/
-npm run preview      # sirve localmente el build producción
+npm run preview      # sirve localmente el build de producción
 ```
 
-Los archivos estáticos en `dist/` pueden servirse con cualquier servidor web (Nginx, Apache, Vercel, etc.).
+Para inyectar la URL del backend en el build:
+
+```bash
+VITE_API_BASE_URL=https://api.mi-empresa.com npm run build
+```
+
+Los archivos estáticos en `dist/` pueden servirse con Nginx, Apache, Vercel, Netlify, etc.
 
 ---
 
@@ -96,7 +183,7 @@ El `Dockerfile` incluido usa una imagen Nginx para servir el build estático.
 ```bash
 # Build pasando la URL del backend como argumento
 docker build \
-  --build-arg VITE_API_BASE_URL=https://api.tu-dominio.com \
+  --build-arg VITE_API_BASE_URL=https://api.mi-empresa.com \
   -t inventory-frontend .
 
 # Ejecutar
@@ -111,24 +198,57 @@ La app estará disponible en `http://localhost`.
 
 ```
 src/
+├── config/
+│   └── env.js                # Acceso centralizado a variables de entorno
 ├── api/
-│   ├── axiosClient.js        # Instancia Axios configurada con JWT
-│   └── services/             # Módulos de llamadas por dominio
+│   ├── axiosClient.js        # Instancia Axios: JWT, interceptores, errores globales
+│   └── services/             # Módulos de llamadas HTTP por dominio
+│       ├── authService.js
+│       ├── clientService.js
+│       ├── companyService.js
+│       ├── reportService.js
+│       └── userService.js
 ├── components/
-│   ├── auth/                 # Login, ProtectedRoute
-│   ├── common/               # Componentes reutilizables
-│   ├── layout/               # Layout principal
-│   ├── modules/              # Módulos por dominio (ventas, reportes…)
-│   ├── ui/                   # Componentes de UI genéricos
-│   ├── utils/                # axiosConfig (re-export), Can, helpers
-│   ├── Dashboard.jsx         # Contenedor principal post-login
-│   ├── SideBar.jsx           # Navegación lateral
-│   └── NavBar.jsx            # Barra superior
+│   ├── auth/
+│   │   └── Login.jsx
+│   ├── common/
+│   │   ├── ProtectedRoute.jsx  # Redirige a /login si no hay token
+│   │   ├── Modal.jsx
+│   │   ├── ResponsiveModal.jsx
+│   │   └── ResponsiveTable.jsx
+│   ├── ui/                   # Componentes genéricos de UI
+│   │   ├── Can.jsx           # Control de acceso por permiso (CANÓNICO)
+│   │   ├── ErrorBoundary.jsx
+│   │   ├── Skeleton.jsx
+│   │   ├── Spinner.jsx
+│   │   └── Toast.jsx
+│   ├── utils/
+│   │   ├── axiosConfig.jsx   # Re-export → src/api/axiosClient.js
+│   │   ├── Can.jsx           # Re-export → src/components/ui/Can.jsx
+│   │   └── PermissionsContext.jsx  # Re-export → src/context/PermissionsContext.jsx
+│   ├── Dashboard.jsx
+│   ├── SideBar.jsx
+│   └── NavBar.jsx
 ├── context/
-│   └── PermissionsContext.jsx # Contexto de permisos RBAC
-├── hooks/                    # Hooks personalizados
+│   └── PermissionsContext.jsx  # Contexto RBAC (implementación canónica)
+├── hooks/
+│   ├── useBreakpoint.js
+│   ├── useCompanyInfo.js
+│   ├── useFetch.js
+│   ├── useMobile.js
+│   └── usePermission.js
 └── main.jsx                  # Punto de entrada + React Router
 ```
+
+### Convenciones de imports
+
+| Qué importar | Desde |
+|---|---|
+| Cliente HTTP | `src/api/axiosClient.js` |
+| Servicios API | `src/api/services/[dominio]Service.js` |
+| Variables de entorno | `src/config/env.js` |
+| Contexto de permisos | `src/context/PermissionsContext.jsx` |
+| Componente `<Can>` | `src/components/ui/Can.jsx` |
 
 ---
 
@@ -147,10 +267,15 @@ src/
 
 ---
 
+## Seguridad frontend
+
+- **Token JWT** almacenado en `localStorage`. El interceptor de Axios lo adjunta automáticamente a cada petición.
+- **Logout automático**: un `401` del servidor borra el token y redirige a `/login`.
+- **Rutas protegidas**: `ProtectedRoute` verifica la existencia del token en cada navegación.
+- **RBAC**: el componente `<Can permission="...">` y el hook `usePermission()` controlan la visibilidad de elementos según los permisos del usuario.
+
+---
+
 ## Licencia
 
 MIT
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.

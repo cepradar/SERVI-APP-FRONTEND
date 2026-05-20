@@ -12,7 +12,9 @@ dist
 dist-ssr
 *.local
 
-# Secrets / Variables de entorno
+# Variables de entorno — overrides personales (git ignored)
+# Los archivos base (.env, .env.development, .env.production, .env.example)
+# SÍ se versionan. Solo los .local son privados.
 .env.local
 .env.*.local
 !.env.example

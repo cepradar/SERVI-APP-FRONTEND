@@ -1,20 +1,23 @@
 import axios from 'axios';
+import { env } from '../config/env';
 
-// La URL base del backend se define exclusivamente mediante la variable de entorno
-// VITE_API_BASE_URL (fichero .env o .env.local).
-// Fallback al origen actual en el puerto 8080 si no se define (útil en dev).
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  `${window.location.protocol}//${window.location.hostname}:8080`;
-
+/**
+ * Instancia Axios configurada centralmente.
+ *
+ * - baseURL:  leída desde src/config/env.js → VITE_API_BASE_URL
+ * - timeout:  30 s (ajustable por petición)
+ * - JWT:      adjuntado automáticamente por el interceptor de request
+ * - 401/403:  manejados globalmente en el interceptor de response
+ */
 const axiosClient = axios.create({
-  baseURL: API_BASE,
+  baseURL: env.API_BASE_URL,
   timeout: 30000,
 });
 
 // ─── Request interceptor ────────────────────────────────────────────────────
 axiosClient.interceptors.request.use(
   (config) => {
+    // Los endpoints de autenticación no necesitan token
     const isAuthEndpoint =
       config.url?.includes('/auth/login') ||
       config.url?.includes('/auth/register');
@@ -37,11 +40,13 @@ axiosClient.interceptors.request.use(
 axiosClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Peticiones marcadas como silenciosas propagan el error sin procesamiento
     if (error.config?.silent) return Promise.reject(error);
 
     const status = error.response?.status;
 
     if (status === 401) {
+      // Token expirado o inválido → limpiar sesión y redirigir al login
       localStorage.removeItem('authToken');
       localStorage.removeItem('userRole');
       localStorage.removeItem('username');
@@ -50,6 +55,7 @@ axiosClient.interceptors.response.use(
     }
 
     if (status === 403) {
+      // Permiso insuficiente → enriquecer el error con el mensaje del servidor
       const serverMsg =
         error.response?.data?.error || 'No tienes permisos para realizar esta acción.';
       const enhanced = new Error(serverMsg);
