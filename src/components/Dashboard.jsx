@@ -7,6 +7,7 @@ import { useNavigate }   from 'react-router-dom';
 import { usePermissions } from '../context/PermissionsContext';
 import { useCompanyInfo } from '../hooks/useCompanyInfo';
 import { useMobile }      from '../hooks/useMobile';
+import authService        from '../api/services/authService';
 
 // ── Lazy loading — cada módulo se carga solo cuando se necesita ───────────────
 const CrudManager          = lazy(() => import('./CrudManager'));
@@ -53,12 +54,46 @@ function Dashboard() {
 
   // ── Leer credenciales del localStorage ──────────────────────────────────
   useEffect(() => {
-    const role     = localStorage.getItem('userRole');
-    const username = localStorage.getItem('username');
-    if (role)     setUserRole(role);
-    if (username) setUserName(username);
-    else          navigate('/login');
+    const role = localStorage.getItem('userRole');
+    const storedFullName = localStorage.getItem('fullName');
+    const storedNameParts = [
+      localStorage.getItem('firstName'),
+      localStorage.getItem('lastName'),
+    ].filter(Boolean).join(' ').trim();
+    const displayName = storedFullName || storedNameParts || localStorage.getItem('displayName');
+
+    if (role) setUserRole(role);
+    if (displayName) setUserName(displayName);
+    else navigate('/login');
   }, [navigate]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    const loadCurrentUser = async () => {
+      try {
+        const { data } = await authService.getCurrentUser();
+        const resolvedName =
+          data?.fullName ||
+          [data?.firstName, data?.lastName].filter(Boolean).join(' ').trim();
+
+        if (data?.username) localStorage.setItem('username', data.username);
+        localStorage.setItem('displayName', resolvedName || '');
+        localStorage.setItem('fullName', data?.fullName || resolvedName || '');
+        localStorage.setItem('firstName', data?.firstName || '');
+        localStorage.setItem('lastName', data?.lastName || '');
+
+        if (resolvedName) {
+          setUserName(resolvedName);
+        }
+      } catch {
+        // Mantener el nombre almacenado localmente si no se puede refrescar.
+      }
+    };
+
+    loadCurrentUser();
+  }, []);
 
   // ── Permisos mínimos por módulo ──────────────────────────────────────────
   const MODULE_MIN_PERMISSION = useMemo(() => ({
@@ -241,6 +276,7 @@ function Dashboard() {
           activeModule={activeModule}
           onHomeClick={() => handleModuleChange('home')}
           companyName={companyInfo?.razonSocial}
+          userName={userName}
           userRole={userRole}
           onMenuToggle={toggleSidebar}
         />

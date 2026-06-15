@@ -151,10 +151,10 @@ export default function ApparatusManager() {
           <option value="">Todos los clientes</option>
           {clients.map(client => (
             <option
-              key={`${client.documento}::${client.tipoDocumentoId}`}
-              value={`${client.documento}::${client.tipoDocumentoId}`}
+              key={`${client.nit}::${client.tipoDocumentoId}`}
+              value={`${client.nit}::${client.tipoDocumentoId}`}
             >
-              {client.documento} ({client.tipoDocumentoId}) - {client.nombre}
+              {client.nit} ({client.tipoDocumentoId}) - {client.nombre}
             </option>
           ))}
         </select>
@@ -194,10 +194,10 @@ export default function ApparatusManager() {
                 <option value="">Seleccione un cliente</option>
                 {clients.map(client => (
                   <option
-                    key={`${client.documento}::${client.tipoDocumentoId}`}
-                    value={`${client.documento}::${client.tipoDocumentoId}`}
+                    key={`${client.nit}::${client.tipoDocumentoId}`}
+                    value={`${client.nit}::${client.tipoDocumentoId}`}
                   >
-                    {client.nombre} {client.apellido} - {client.documento} ({client.tipoDocumentoId})
+                    {client.nombre} {client.apellido} - {client.nit} ({client.tipoDocumentoId})
                   </option>
                 ))}
               </select>

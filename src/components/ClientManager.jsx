@@ -22,7 +22,7 @@ export default function ClientManager() {
   const [duplicateClient, setDuplicateClient] = useState(null);
   const [clientCategories, setClientCategories] = useState([]);
   const [formData, setFormData] = useState({
-    documento: '',
+    nit: '',
     nombre: '',
     apellido: '',
     telefono: '',
@@ -132,7 +132,7 @@ export default function ClientManager() {
 
   const resetForm = () => {
     setFormData({
-      documento: '',
+      nit: '',
       nombre: '',
       apellido: '',
       telefono: '',
@@ -149,7 +149,7 @@ export default function ClientManager() {
   const openCreateForm = () => {
     setEditingClient(null);
     setFormData({
-      documento: '',
+      nit: '',
       nombre: '',
       apellido: '',
       telefono: '',
@@ -179,7 +179,7 @@ export default function ClientManager() {
       setFormMode(null);
       setEditingClient(null);
       setShowElectroForm(null);
-      setExpandedClientKey(`${duplicateClient.documento}::${duplicateClient.tipoDocumentoId}`);
+      setExpandedClientKey(`${duplicateClient.nit}::${duplicateClient.tipoDocumentoId}`);
       fetchElectrodomesticos();
     }
     setShowDuplicateModal(false);
@@ -194,16 +194,16 @@ export default function ClientManager() {
     e.preventDefault();
     try {
       if (formMode === 'edit' && editingClient) {
-        await api.put(`/api/clientes/actualizar/${editingClient.documento}/${editingClient.tipoDocumentoId}`, formData);
+        await api.put(`/api/clientes/actualizar/${editingClient.nit}/${editingClient.tipoDocumentoId}`, formData);
       } else if (formMode === 'create') {
-        const documento = formData.documento?.trim();
+        const nit = formData.nit?.trim();
         const tipoDocumentoId = formData.tipoDocumentoId?.trim();
-        if (!documento || !tipoDocumentoId) {
+        if (!nit || !tipoDocumentoId) {
           return;
         }
 
         const existing = clients.find(
-          (client) => client.documento === documento && client.tipoDocumentoId === tipoDocumentoId
+          (client) => client.nit === nit && client.tipoDocumentoId === tipoDocumentoId
         );
 
         if (existing) {
@@ -219,20 +219,20 @@ export default function ClientManager() {
       resetForm();
     } catch (err) {
       if (err.response?.status === 409) {
-        const documento = formData.documento?.trim();
+        const nit = formData.nit?.trim();
         const tipoDocumentoId = formData.tipoDocumentoId?.trim();
-        if (!documento || !tipoDocumentoId) {
+        if (!nit || !tipoDocumentoId) {
           return;
         }
 
         const existing = clients.find(
-          (client) => client.documento === documento && client.tipoDocumentoId === tipoDocumentoId
+          (client) => client.nit === nit && client.tipoDocumentoId === tipoDocumentoId
         );
 
         let resolvedClient = existing;
         if (!resolvedClient) {
           try {
-            const response = await api.get(`/api/clientes/${documento}/${tipoDocumentoId}`);
+            const response = await api.get(`/api/clientes/${nit}/${tipoDocumentoId}`);
             resolvedClient = response.data;
           } catch (fetchError) {
             console.error('Error al cargar cliente existente:', fetchError);
@@ -256,7 +256,7 @@ export default function ClientManager() {
   const handleEdit = (client) => {
     setEditingClient(client);
     setFormData({
-      documento: client.documento || '',
+      nit: client.nit || '',
       nombre: client.nombre || '',
       apellido: client.apellido || '',
       telefono: client.telefono || '',
@@ -272,7 +272,7 @@ export default function ClientManager() {
   const handleDelete = async (client) => {
     if (!confirm('¿Eliminar cliente?')) return;
     try {
-      await api.delete(`/api/clientes/eliminar/${client.documento}/${client.tipoDocumentoId}`);
+      await api.delete(`/api/clientes/eliminar/${client.nit}/${client.tipoDocumentoId}`);
       fetchClients();
     } catch (err) {
       console.error('Error al eliminar:', err);
@@ -298,10 +298,10 @@ export default function ClientManager() {
   };
 
   const handleAddElectrodomestico = (cliente) => {
-    const compositeKey = `${cliente.documento}::${cliente.tipoDocumentoId}`;
+    const compositeKey = `${cliente.nit}::${cliente.tipoDocumentoId}`;
     setElectroFormData(prev => ({
       ...prev,
-      clienteId: cliente.documento,
+      clienteId: cliente.nit,
       clienteTipoDocumentoId: cliente.tipoDocumentoId
     }));
     setShowElectroForm(compositeKey);
@@ -336,7 +336,7 @@ export default function ClientManager() {
   };
 
   const selectedClient = expandedClientKey
-    ? clients.find((client) => `${client.documento}::${client.tipoDocumentoId}` === expandedClientKey)
+    ? clients.find((client) => `${client.nit}::${client.tipoDocumentoId}` === expandedClientKey)
     : null;
 
   if (loading) return <div className="text-center p-4">Cargando...</div>;
@@ -397,11 +397,11 @@ export default function ClientManager() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1">Documento/NIT *</label>
+              <label className="block text-xs font-medium mb-1">NIT/Documento *</label>
               <input
                 type="text"
-                name="documento"
-                value={formData.documento}
+                name="nit"
+                value={formData.nit}
                 onChange={handleInputChange}
                 required
                 disabled={!!editingClient}
@@ -517,13 +517,13 @@ export default function ClientManager() {
               render: (client) => (
                 <button
                   onClick={() => {
-                    const key = `${client.documento}::${client.tipoDocumentoId}`;
+                    const key = `${client.nit}::${client.tipoDocumentoId}`;
                     setExpandedClientKey(expandedClientKey === key ? null : key);
                   }}
                   className="inline-flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white p-0.5 rounded transition-colors"
                   title="Ver electrodomésticos"
                 >
-                  {expandedClientKey === `${client.documento}::${client.tipoDocumentoId}` ? (
+                  {expandedClientKey === `${client.nit}::${client.tipoDocumentoId}` ? (
                     <ChevronUpIcon className="w-3 h-3" />
                   ) : (
                     <ChevronDownIcon className="w-3 h-3" />
@@ -533,7 +533,7 @@ export default function ClientManager() {
             },
             { key: 'nombre', label: 'Nombre', sortable: true, filterable: true },
             { key: 'apellido', label: 'Apellido', sortable: true, filterable: true },
-            { key: 'documento', label: 'Documento/NIT', sortable: true, filterable: true },
+            { key: 'nit', label: 'NIT/Documento', sortable: true, filterable: true },
             { key: 'tipoDocumentoId', label: 'Tipo Documento', sortable: true, filterable: true },
             { key: 'telefono', label: 'Teléfono', sortable: true, filterable: true },
             { key: 'email', label: 'Email', sortable: true, filterable: true },
@@ -572,7 +572,7 @@ export default function ClientManager() {
                 Cliente: {selectedClient.nombre} {selectedClient.apellido}
               </h4>
               <p className="text-xs text-gray-600">
-                {selectedClient.tipoDocumentoId} · {selectedClient.documento} · {selectedClient.telefono || 'Sin teléfono'}
+                {selectedClient.tipoDocumentoId} · {selectedClient.nit} · {selectedClient.telefono || 'Sin teléfono'}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -701,7 +701,7 @@ export default function ClientManager() {
               </thead>
               <tbody>
                 {(() => {
-                  const list = getClientElectrodomesticos(selectedClient.documento, selectedClient.tipoDocumentoId);
+                  const list = getClientElectrodomesticos(selectedClient.nit, selectedClient.tipoDocumentoId);
                   return list.length > 0 ? (
                     list.map((electro) => (
                     <tr key={electro.id} className="border-t hover:bg-gray-50">

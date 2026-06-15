@@ -7,6 +7,12 @@ function ProfileMenu({ userName }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
+  const [displayName, setDisplayName] = useState(() =>
+    userName ||
+    localStorage.getItem('fullName') ||
+    [localStorage.getItem('firstName'), localStorage.getItem('lastName')].filter(Boolean).join(' ').trim() ||
+    localStorage.getItem('displayName')
+  );
   const [profilePicture, setProfilePicture] = useState(() => {
     const username = localStorage.getItem('username');
     if (!username) return null;
@@ -19,6 +25,15 @@ function ProfileMenu({ userName }) {
   });
   const menuRef = useRef(null);
   const lastUsernameRef = useRef(null);
+
+  useEffect(() => {
+    const resolvedName =
+      userName ||
+      localStorage.getItem('fullName') ||
+      [localStorage.getItem('firstName'), localStorage.getItem('lastName')].filter(Boolean).join(' ').trim() ||
+      localStorage.getItem('displayName');
+    setDisplayName(resolvedName);
+  }, [userName]);
 
   useEffect(() => {
     const loadProfilePicture = async () => {
@@ -143,7 +158,7 @@ function ProfileMenu({ userName }) {
         <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 divide-y divide-gray-100 focus:outline-none z-50 animate-fade-in-down" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
           {/* Nuevo div para el texto de bienvenida */}
           <div className="p-4 text-sm font-medium text-gray-900 border-b border-gray-200" role="none">
-            Bienvenido, {userName || 'Administrador'}
+            Bienvenido, {displayName || 'Usuario'}
           </div>
           <div className="py-1" role="none">
             <button

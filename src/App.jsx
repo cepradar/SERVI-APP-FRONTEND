@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { PermissionsProvider } from './context/PermissionsContext';
+import { SedesProvider }       from './context/SedesContext';
 import { ToastProvider }       from './components/ui/Toast';
 import { ErrorBoundary }       from './components/ui/ErrorBoundary';
 import ProtectedRoute          from './components/common/ProtectedRoute';
@@ -35,23 +36,25 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <PermissionsProvider>
-          <Router>
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                <Route path="/"         element={<LandingPage />} />
-                <Route path="/login"    element={<Login />} />
-                <Route
-                  path="/dashboard"
-                  element={
-                    <ProtectedRoute>
-                      <Dashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
-          </Router>
+          <SedesProvider>
+            <Router>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/"         element={<LandingPage />} />
+                  <Route path="/login"    element={<Login />} />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <ProtectedRoute>
+                        <Dashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+            </Router>
+          </SedesProvider>
         </PermissionsProvider>
       </ToastProvider>
     </ErrorBoundary>

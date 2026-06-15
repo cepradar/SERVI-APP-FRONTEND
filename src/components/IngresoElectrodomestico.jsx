@@ -28,7 +28,7 @@ export default function IngresoElectrodomestico() {
   // Estado formulario electrodoméstico
   const [formElectro, setFormElectro] = useState({
     tipoDocumentoId: 'CC',
-    documentoCliente: '',
+    nitCliente: '',
     marca: '',
     modelo: '',
     numeroSerie: '',
@@ -49,19 +49,19 @@ export default function IngresoElectrodomestico() {
   }, []);
 
   useEffect(() => {
-    if (!formElectro.documentoCliente.trim()) {
+    if (!formElectro.nitCliente.trim()) {
       setClienteEncontrado(null);
       return;
     }
 
     const encontrado = clientes.find(
       (c) =>
-        String(c.documento) === String(formElectro.documentoCliente).trim() &&
+        String(c.nit) === String(formElectro.nitCliente).trim() &&
         c.tipoDocumentoId === formElectro.tipoDocumentoId
     );
 
     setClienteEncontrado(encontrado || null);
-  }, [clientes, formElectro.documentoCliente, formElectro.tipoDocumentoId]);
+  }, [clientes, formElectro.nitCliente, formElectro.tipoDocumentoId]);
 
   const cargarDatos = async () => {
     try {
@@ -94,8 +94,8 @@ export default function IngresoElectrodomestico() {
   const handleSubmitElectrodomestico = async (e) => {
     e.preventDefault();
     
-    if (!formElectro.documentoCliente.trim()) {
-      alert('Debe ingresar el documento del cliente');
+    if (!formElectro.nitCliente.trim()) {
+      alert('Debe ingresar el nit del cliente');
       return;
     }
 
@@ -117,9 +117,9 @@ export default function IngresoElectrodomestico() {
     // NO hacer POST aquí - solo validar y guardar en memoria
     // El POST se hará cuando se clickee "Finalizar Proceso"
     const electrodomesticoTemporal = {
-      clienteId: clienteEncontrado.documento, // ✅ Usar documento como ID, no id
+      clienteId: clienteEncontrado.nit, // Usar nit como ID
       clienteTipoDocumentoId: clienteEncontrado.tipoDocumentoId,
-      clienteNombre: clienteEncontrado.nombre || clienteEncontrado.documento,
+      clienteNombre: clienteEncontrado.nombre || clienteEncontrado.nit,
       numeroSerie: formElectro.numeroSerie,
       marcaElectrodomesticoId: parseInt(formElectro.marcaElectrodomesticoId), // ✅ Asegurar que sea number
       marcaNombre: marcas.find(m => m.id === parseInt(formElectro.marcaElectrodomesticoId))?.nombre || '',
@@ -331,15 +331,15 @@ export default function IngresoElectrodomestico() {
                 </select>
               </div>
 
-              {/* Documento Cliente */}
+              {/* NIT Cliente */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Documento Cliente <span className="text-red-500">*</span>
+                  NIT / Documento Cliente <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  name="documentoCliente"
-                  value={formElectro.documentoCliente}
+                  name="nitCliente"
+                  value={formElectro.nitCliente}
                   onChange={handleChangeElectro}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -468,7 +468,7 @@ export default function IngresoElectrodomestico() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <p className="text-sm text-blue-800">
               <strong>Electrodoméstico ID:</strong> {electrodomesticoCreado.id}
-              {' '}| <strong>Cliente:</strong> {formElectro.documentoCliente}
+              {' '}| <strong>Cliente:</strong> {formElectro.nitCliente}
             </p>
           </div>
 

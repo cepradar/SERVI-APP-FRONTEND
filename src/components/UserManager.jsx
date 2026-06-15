@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from './utils/axiosConfig';
 import { useNavigate } from 'react-router-dom';
-import { PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PencilIcon, TrashIcon, BuildingOffice2Icon, XMarkIcon } from '@heroicons/react/24/outline';
 import DataTable from './DataTable';
 import { usePermissions } from './utils/PermissionsContext';
+import sedeService from '../api/services/sedeService';
 
 const UserForm = ({ formData, handleInputChange, handleFormSubmit, editingId, handleCancelEdit, roles, handleDelete }) => {
   const { permissions } = usePermissions();
@@ -203,6 +204,149 @@ const UserList = ({ data, onEdit, onDelete, onAdd }) => {
   );
 };
 
+// ── Panel de asignación de sedes al usuario ──────────────────────────────────
+function UserSedesPanel({ username }) {
+  const { permissions } = usePermissions();
+  const can = (c) => permissions.includes(c);
+
+  const [assigned,  setAssigned]  = useState([]);
+  const [allSedes,  setAllSedes]  = useState([]);
+  const [selected,  setSelected]  = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [msg,       setMsg]       = useState({ text: '', isErr: false });
+
+  const notify = (text, isErr = false) => {
+    setMsg({ text, isErr });
+    setTimeout(() => setMsg({ text: '', isErr: false }), 3000);
+  };
+
+  const load = useCallback(async () => {
+    if (!username) return;
+    setLoading(true);
+    try {
+      const [resAssigned, resAll] = await Promise.all([
+        sedeService.getUserSedes(username),
+        sedeService.list(),
+      ]);
+      setAssigned(Array.isArray(resAssigned.data) ? resAssigned.data : []);
+      setAllSedes(Array.isArray(resAll.data)      ? resAll.data      : []);
+    } catch {
+      notify('No se pudieron cargar las sedes', true);
+    } finally {
+      setLoading(false);
+    }
+  }, [username]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const unassigned = allSedes.filter(
+    (s) => s.activo !== false && !assigned.find((a) => a.codigoSede === s.codigoSede)
+  );
+
+  const handleAssign = async () => {
+    if (!selected) return;
+    try {
+      await sedeService.assignSede(username, selected);
+      notify('Sede asignada correctamente');
+      setSelected('');
+      load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Error al asignar sede', true);
+    }
+  };
+
+  const handleRemove = async (sedeId) => {
+    try {
+      await sedeService.removeSede(username, sedeId);
+      notify('Sede removida correctamente');
+      load();
+    } catch (err) {
+      notify(err.response?.data?.message || 'Error al remover sede', true);
+    }
+  };
+
+  return (
+    <div className="border rounded shadow-sm p-3 md:p-4 bg-white mt-3">
+      <h3 className="font-bold text-sm md:text-base mb-3 flex items-center gap-2 text-gray-800">
+        <BuildingOffice2Icon className="h-4 w-4 text-blue-600" />
+        Sedes asignadas al usuario
+      </h3>
+
+      {msg.text && (
+        <div className={`mb-2 p-2 text-xs rounded ${msg.isErr ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+          {msg.text}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-gray-400">Cargando...</p>
+      ) : (
+        <>
+          {/* Lista de sedes asignadas */}
+          <div className="mb-3 min-h-[32px]">
+            {assigned.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">Sin sedes asignadas.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {assigned.map((sede) => (
+                  <span
+                    key={sede.codigoSede}
+                    className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium px-2 py-1 rounded-full"
+                  >
+                    <BuildingOffice2Icon className="h-3 w-3 flex-shrink-0" />
+                    {sede.nombreSede || sede.nombre || sede.codigoSede}
+                    <span className="text-blue-400 font-mono">({sede.codigoSede})</span>
+                    {can('users.update') && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(sede.codigoSede)}
+                        className="ml-0.5 text-blue-400 hover:text-red-600 transition-colors"
+                        title="Quitar sede"
+                      >
+                        <XMarkIcon className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Asignar nueva sede */}
+          {can('users.update') && unassigned.length > 0 && (
+            <div className="flex gap-2 items-center flex-wrap">
+              <select
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                className="flex-1 min-w-0 h-8 px-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Seleccionar sede para asignar...</option>
+                {unassigned.map((s) => (
+                  <option key={s.codigoSede} value={s.codigoSede}>
+                    {s.nombre} ({s.codigoSede}) — {s.ciudad || ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleAssign}
+                disabled={!selected}
+                className="h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                Asignar
+              </button>
+            </div>
+          )}
+
+          {can('users.update') && unassigned.length === 0 && allSedes.length > 0 && (
+            <p className="text-xs text-gray-400 italic">Todas las sedes activas ya están asignadas.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function UserManager({ forceShowForm = false }) {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -315,15 +459,20 @@ export default function UserManager({ forceShowForm = false }) {
   return (
     <div>
       {showForm ? (
-        <UserForm
-          formData={formData}
-          handleInputChange={handleInputChange}
-          handleFormSubmit={handleFormSubmit}
-          editingId={editingId}
-          handleCancelEdit={handleCancelEdit}
-          roles={roles}
-          handleDelete={handleDelete}
-        />
+        <>
+          <UserForm
+            formData={formData}
+            handleInputChange={handleInputChange}
+            handleFormSubmit={handleFormSubmit}
+            editingId={editingId}
+            handleCancelEdit={handleCancelEdit}
+            roles={roles}
+            handleDelete={handleDelete}
+          />
+          {editingId && (
+            <UserSedesPanel username={formData.username || editingId} />
+          )}
+        </>
       ) : (
         <UserList
           data={users}

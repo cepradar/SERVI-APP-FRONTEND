@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import api from "./utils/axiosConfig";
 import DataTable from "./DataTable";
 import { usePermissions } from './utils/PermissionsContext';
+import { useSedes } from '../context/SedesContext';
+import { BuildingOffice2Icon } from '@heroicons/react/24/outline';
 
 /**
  * COMPONENTE REFACTORIZADO: OrdenServicio
@@ -15,6 +17,7 @@ import { usePermissions } from './utils/PermissionsContext';
 export default function OrdenServicio() {
   const { permissions } = usePermissions();
   const can = (c) => permissions.includes(c);
+  const { sedes, sedeActual } = useSedes();
   const [ordenes, setOrdenes] = useState([]);
   const [ordenesParaAsignar, setOrdenesParaAsignar] = useState([]);
   const [ordenesTecnico, setOrdenesTecnico] = useState([]);
@@ -35,6 +38,18 @@ export default function OrdenServicio() {
   const [selectedOrdenAsignar, setSelectedOrdenAsignar] = useState("");
   const [selectedTecnico, setSelectedTecnico] = useState("");
   const [selectedOrdenCierre, setSelectedOrdenCierre] = useState("");
+  const [cierreDetalles, setCierreDetalles] = useState([]);
+  const [selectedDetalleId, setSelectedDetalleId] = useState(null);
+  const [detalleForm, setDetalleForm] = useState({
+    id: "",
+    regServicio: null,
+    servicioNombre: "",
+    servicioCodigo: "",
+    cierreTecnico: "",
+    observaciones: "",
+    diagnosticado: false,
+    reparado: false,
+  });
   const [clientMatches, setClientMatches] = useState([]);
   const [showClientMatches, setShowClientMatches] = useState(false);
 
@@ -44,6 +59,8 @@ export default function OrdenServicio() {
 
   // Servicios activos para dropdown de tipoServicio
   const [serviciosActivos, setServiciosActivos] = useState([]);
+  const [servicioSeleccionadoKey, setServicioSeleccionadoKey] = useState("");
+  const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
 
   // Estado para el panel de venta en "Responder Orden"
   const [productos, setProductos] = useState([]);
@@ -56,12 +73,32 @@ export default function OrdenServicio() {
 
   // Formulario simplificado: SIN items/productos
   const [formulario, setFormulario] = useState({
-    documento: "",
+    codigoSede: sedeActual?.codigoSede || '',
+    nit: "",
     nombreCliente: "",
-    tipoServicio: "REPARACION",
     descripcionProblema: "",
     observaciones: ""
   });
+
+  const opcionesServicio = serviciosActivos.length > 0
+    ? serviciosActivos.map((servicio) => ({
+        key: String(servicio.id),
+        id: servicio.id,
+        nombre: servicio.nombre,
+        precioBase: Number(servicio.precioBase || 0),
+      }))
+    : [
+        { key: "REPARACION", id: null, nombre: "Reparación", precioBase: 0 },
+        { key: "MANTENIMIENTO", id: null, nombre: "Mantenimiento", precioBase: 0 },
+        { key: "LATONERIA", id: null, nombre: "Latonería", precioBase: 0 },
+      ];
+
+  // Sincronizar sede actual cuando cambie el contexto
+  useEffect(() => {
+    if (sedeActual?.codigoSede) {
+      setFormulario((prev) => ({ ...prev, codigoSede: sedeActual.codigoSede }));
+    }
+  }, [sedeActual]);
 
   // Formulario de cierre
   const [cierreForm, setCierreForm] = useState({
@@ -242,22 +279,53 @@ export default function OrdenServicio() {
       setError("La orden seleccionada no tiene cliente asociado");
       return;
     }
+    if (!ordenSeleccionada?.codigoSede) {
+      setError("La orden seleccionada no tiene una sede válida asociada");
+      return;
+    }
     if (ventaItems.length === 0) { setError("Agrega al menos un producto a la venta"); return; }
     setLoading(true);
     setError("");
     try {
-      await api.post("/api/ventas/registrar", {
+      for (const item of ventaItems) {
+        if (!item.productId) {
+          setError("Todos los productos deben tener un ID válido");
+          setLoading(false);
+          return;
+        }
+        if (!item.cantidad || item.cantidad <= 0) {
+          setError("La cantidad debe ser mayor a 0");
+          setLoading(false);
+          return;
+        }
+        const producto = productos.find((p) => String(p.id) === String(item.productId));
+        if (!producto) {
+          setError(`Producto no encontrado: ${item.productId}`);
+          setLoading(false);
+          return;
+        }
+        if (producto.quantity < item.cantidad) {
+          setError(`No hay suficiente cantidad de ${producto.name}. Disponible: ${producto.quantity}`);
+          setLoading(false);
+          return;
+        }
+      }
+
+      const response = await api.post("/api/ventas/registrar", {
+        codigoSede: ordenSeleccionada.codigoSede,
         clienteId: ordenSeleccionada.clienteId,
         clienteTipoDocumento: ordenSeleccionada.clienteTipoDocumentoId,
         observaciones: ventaObservaciones,
         ordenDeServicioId: selectedOrdenCierre || null,
         detalles: ventaItems.map((i) => ({
           productId: i.productId,
+          tipoItem: "PRODUCTO",
           cantidad: i.cantidad,
           precioUnitario: i.precioUnitario,
         })),
       });
-      setSuccessMessage("Venta registrada correctamente");
+      const totalVenta = parseFloat(response.data?.totalVenta || 0);
+      setSuccessMessage(`¡Venta registrada exitosamente! Total: $${totalVenta.toFixed(2)}`);
       setVentaItems([]);
       setVentaObservaciones("");
       setVentaProductoBuscado("");
@@ -292,7 +360,7 @@ export default function OrdenServicio() {
     const fetchElectrodomesticos = async () => {
       try {
         const response = await api.get(
-          `/api/cliente-electrodomestico/cliente/${clienteEncontrado.documento}/${clienteEncontrado.tipoDocumentoId}`
+          `/api/cliente-electrodomestico/cliente/${clienteEncontrado.nit}/${clienteEncontrado.tipoDocumentoId}`
         );
         const data = Array.isArray(response.data) ? response.data : [];
         setClienteElectrodomesticos(data);
@@ -317,6 +385,18 @@ export default function OrdenServicio() {
         garantiaServicio: 30,
         observaciones: ""
       });
+      setCierreDetalles([]);
+      setSelectedDetalleId(null);
+      setDetalleForm({
+        id: "",
+        regServicio: null,
+        servicioNombre: "",
+        servicioCodigo: "",
+        cierreTecnico: "",
+        observaciones: "",
+        diagnosticado: false,
+        reparado: false,
+      });
       setVentaItems([]);
       setVentaComprador({ nombre: "", telefono: "" });
       return;
@@ -334,6 +414,31 @@ export default function OrdenServicio() {
       garantiaServicio: ordenSeleccionada.garantiaServicio ?? 30,
       observaciones: ordenSeleccionada.observaciones || ""
     });
+    setCierreDetalles(
+      Array.isArray(ordenSeleccionada.detalles)
+        ? ordenSeleccionada.detalles.map((detalle) => ({
+            id: detalle.id,
+            regServicio: detalle.regServicio,
+            servicioNombre: detalle.servicioNombre,
+            servicioCodigo: detalle.servicioCodigo,
+            observaciones: detalle.observaciones || "",
+            cierreTecnico: detalle.cierreTecnico || "",
+            reparado: Boolean(detalle.reparado),
+            diagnosticado: Boolean(detalle.diagnosticado),
+          }))
+        : []
+    );
+    setSelectedDetalleId(null);
+    setDetalleForm({
+      id: "",
+      regServicio: null,
+      servicioNombre: "",
+      servicioCodigo: "",
+      cierreTecnico: "",
+      observaciones: "",
+      diagnosticado: false,
+      reparado: false,
+    });
     // Auto-poblar datos del cliente para la venta
     setVentaItems([]);
     setVentaComprador({
@@ -346,7 +451,7 @@ export default function OrdenServicio() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
 
-    if (name === "documento") {
+    if (name === "nit") {
       setClienteEncontrado(null);
       setClientMatches([]);
       setShowClientMatches(false);
@@ -354,7 +459,7 @@ export default function OrdenServicio() {
       setSelectedElectrodomestico(null);
       setFormulario((prev) => ({
         ...prev,
-        documento: value,
+        nit: value,
         nombreCliente: ""
       }));
       return;
@@ -363,12 +468,115 @@ export default function OrdenServicio() {
     setFormulario((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleDetalleCierreChange = (detalleId, field, value) => {
+    setCierreDetalles((prev) =>
+      prev.map((detalle) => {
+        if (detalle.id !== detalleId) return detalle;
+        const updated = { ...detalle, [field]: value };
+        if (field === "cierreTecnico") {
+          updated.diagnosticado = value.trim().length > 0 || updated.diagnosticado;
+        }
+        return updated;
+      })
+    );
+  };
+
+  const getDetalleSemaforo = (detalle) => {
+    if (detalle?.reparado) {
+      return {
+        label: "REPARADO",
+        dot: "bg-green-500",
+        badge: "bg-green-100 text-green-800",
+      };
+    }
+    if (detalle?.diagnosticado || detalle?.cierreTecnico?.trim()) {
+      return {
+        label: "DIAGNOSTICADO",
+        dot: "bg-yellow-400",
+        badge: "bg-yellow-100 text-yellow-800",
+      };
+    }
+    return {
+      label: "SIN RESPUESTA",
+      dot: "bg-red-500",
+      badge: "bg-red-100 text-red-800",
+    };
+  };
+
+  const abrirFormularioDetalle = (detalle) => {
+    if (!detalle) return;
+    setSelectedDetalleId(detalle.id);
+    setDetalleForm({
+      id: detalle.id,
+      regServicio: detalle.regServicio,
+      servicioNombre: detalle.servicioNombre || "",
+      servicioCodigo: detalle.servicioCodigo || "",
+      cierreTecnico: detalle.cierreTecnico || "",
+      observaciones: detalle.observaciones || "",
+      diagnosticado: Boolean(detalle.diagnosticado || detalle.cierreTecnico?.trim()),
+      reparado: Boolean(detalle.reparado),
+    });
+  };
+
+  const cerrarFormularioDetalle = () => {
+    setSelectedDetalleId(null);
+    setDetalleForm({
+      id: "",
+      regServicio: null,
+      servicioNombre: "",
+      servicioCodigo: "",
+      cierreTecnico: "",
+      observaciones: "",
+      diagnosticado: false,
+      reparado: false,
+    });
+  };
+
+  const handleDetalleFormChange = (field, value) => {
+    setDetalleForm((prev) => {
+      const updated = { ...prev, [field]: value };
+      if (field === "cierreTecnico" && value.trim()) {
+        updated.diagnosticado = true;
+      }
+      if (field === "reparado" && value) {
+        updated.diagnosticado = true;
+      }
+      return updated;
+    });
+  };
+
+  const handleAgregarServicioOrden = () => {
+    if (!servicioSeleccionadoKey) {
+      setError("Debes seleccionar un servicio para agregar");
+      return;
+    }
+
+    const servicio = opcionesServicio.find((item) => item.key === servicioSeleccionadoKey);
+    if (!servicio) {
+      setError("El servicio seleccionado no es válido");
+      return;
+    }
+
+    if (serviciosSeleccionados.some((item) => item.key === servicio.key)) {
+      setError("Ese servicio ya fue agregado a la orden");
+      return;
+    }
+
+    setServiciosSeleccionados((prev) => [...prev, servicio]);
+    setServicioSeleccionadoKey("");
+    setError("");
+  };
+
+  const handleQuitarServicioOrden = (serviceKey) => {
+    setServiciosSeleccionados((prev) => prev.filter((item) => item.key !== serviceKey));
+  };
+
   const seleccionarCliente = (cliente) => {
     if (!cliente) return;
     setClienteEncontrado(cliente);
     setFormulario((prev) => ({
       ...prev,
-      documento: cliente.documento || prev.documento,
+      nit: cliente.nit || prev.nit,
       nombreCliente: `${cliente.nombre || ""} ${cliente.apellido || ""}`.trim()
     }));
     setClientMatches([]);
@@ -380,8 +588,8 @@ export default function OrdenServicio() {
     if (e.key !== "Enter") return;
     e.preventDefault();
 
-    if (!formulario.documento.trim()) {
-      setError("Por favor ingresa un documento");
+    if (!formulario.nit.trim()) {
+      setError("Por favor ingresa un nit");
       return;
     }
 
@@ -389,7 +597,7 @@ export default function OrdenServicio() {
       setLoading(true);
       setError("");
       const response = await api.get(
-        `/api/clientes/${formulario.documento}`
+        `/api/clientes/${formulario.nit}`
       );
       const data = response.data;
 
@@ -427,6 +635,11 @@ export default function OrdenServicio() {
       return;
     }
 
+    if (!formulario.codigoSede) {
+      setError("Debes seleccionar una sede");
+      return;
+    }
+
     if (!selectedElectrodomestico) {
       setError("Debes seleccionar un electrodoméstico");
       return;
@@ -437,16 +650,30 @@ export default function OrdenServicio() {
       return;
     }
 
+    if (serviciosSeleccionados.length === 0) {
+      setError("Debes agregar al menos un servicio a la orden");
+      return;
+    }
+
     try {
       setLoading(true);
 
+      const resumenServicios = serviciosSeleccionados.map((servicio) => servicio.nombre).join(", ");
+
       const payload = {
-        clienteId: clienteEncontrado.documento,
+        codigoSede: formulario.codigoSede,
+        clienteId: clienteEncontrado.nit,
         clienteTipoDocumentoId: clienteEncontrado.tipoDocumentoId,
         electrodomesticoId: selectedElectrodomestico.id,
-        tipoServicio: formulario.tipoServicio,
+        tipoServicio: resumenServicios,
         descripcionProblema: formulario.descripcionProblema,
-        observaciones: formulario.observaciones
+        observaciones: formulario.observaciones,
+        detalles: serviciosSeleccionados.map((servicio) => ({
+          servicioId: servicio.id,
+          servicioNombre: servicio.nombre,
+          cantidad: 1,
+          precioUnitario: servicio.precioBase,
+        })),
       };
 
       const response = await api.post(
@@ -457,12 +684,14 @@ export default function OrdenServicio() {
       if (response.data) {
         setSuccessMessage(`Orden creada exitosamente: ${response.data.id}`);
         setFormulario({
-          documento: "",
+          codigoSede: sedeActual?.codigoSede || '',
+          nit: "",
           nombreCliente: "",
-          tipoServicio: "REPARACION",
           descripcionProblema: "",
           observaciones: ""
         });
+        setServicioSeleccionadoKey("");
+        setServiciosSeleccionados([]);
         setClienteEncontrado(null);
         setSelectedElectrodomestico(null);
         setActiveView("LISTA");
@@ -514,6 +743,14 @@ export default function OrdenServicio() {
       setError("Selecciona una orden");
       return;
     }
+    if (cierreDetalles.length === 0) {
+      setError("La orden seleccionada no tiene servicios para cerrar");
+      return;
+    }
+    if (nuevoEstado === "REPARADO" && cierreDetalles.some((detalle) => !detalle.reparado)) {
+      setError("Todos los servicios de la orden deben marcarse como reparados antes de cerrar");
+      return;
+    }
 
     try {
       setLoading(true);
@@ -524,6 +761,14 @@ export default function OrdenServicio() {
         partesCambiadas: cierreForm.partesCambiadas,
         garantiaServicio: cierreForm.garantiaServicio,
         observaciones: cierreForm.observaciones,
+        detalles: cierreDetalles.map((detalle) => ({
+          id: detalle.id,
+          regServicio: detalle.regServicio,
+          observaciones: detalle.observaciones,
+          cierreTecnico: detalle.cierreTecnico,
+          reparado: Boolean(detalle.reparado),
+          diagnosticado: Boolean(detalle.diagnosticado || detalle.cierreTecnico?.trim()),
+        })),
         estado: nuevoEstado,
       };
 
@@ -537,12 +782,73 @@ export default function OrdenServicio() {
         garantiaServicio: 30,
         observaciones: ""
       });
+      setCierreDetalles([]);
       setSelectedOrdenCierre("");
       await Promise.all([cargarOrdenes(), cargarMisOrdenes()]);
 
       setTimeout(() => setSuccessMessage(""), 4000);
     } catch (err) {
       setError("Error al guardar/cambiar estado: " + (err.message || err.response?.data || "Error desconocido"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuardarServicioSeleccionado = async () => {
+    if (!selectedDetalleId) {
+      setError("Selecciona un servicio para responder");
+      return;
+    }
+
+    const detallesActualizados = cierreDetalles.map((detalle) =>
+      detalle.id === selectedDetalleId
+        ? {
+            ...detalle,
+            cierreTecnico: detalleForm.cierreTecnico,
+            observaciones: detalleForm.observaciones,
+            diagnosticado: Boolean(detalleForm.diagnosticado || detalleForm.cierreTecnico.trim()),
+            reparado: Boolean(detalleForm.reparado),
+          }
+        : detalle
+    );
+
+    setCierreDetalles(detallesActualizados);
+
+    const todosReparados = detallesActualizados.length > 0 && detallesActualizados.every((detalle) => detalle.reparado);
+    const nuevoEstado = todosReparados ? "REPARADO" : "EN_PROCESO";
+    const mensajeExito = todosReparados
+      ? "Servicio guardado y orden marcada como REPARADO"
+      : "Servicio guardado y orden en proceso";
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const payload = {
+        diagnostico: cierreForm.diagnostico,
+        solucion: cierreForm.solucion,
+        partesCambiadas: cierreForm.partesCambiadas,
+        garantiaServicio: cierreForm.garantiaServicio,
+        observaciones: cierreForm.observaciones,
+        detalles: detallesActualizados.map((detalle) => ({
+          id: detalle.id,
+          regServicio: detalle.regServicio,
+          observaciones: detalle.observaciones,
+          cierreTecnico: detalle.cierreTecnico,
+          reparado: Boolean(detalle.reparado),
+          diagnosticado: Boolean(detalle.diagnosticado || detalle.cierreTecnico?.trim()),
+        })),
+        estado: nuevoEstado,
+      };
+
+      await api.put(`/api/servicios-reparacion/${selectedOrdenCierre}/cerrar-tecnico`, payload);
+
+      setSuccessMessage(mensajeExito);
+      cerrarFormularioDetalle();
+      await Promise.all([cargarOrdenes(), cargarMisOrdenes()]);
+      setTimeout(() => setSuccessMessage(""), 4000);
+    } catch (err) {
+      setError("Error al guardar el cierre del servicio: " + (err.message || err.response?.data || "Error desconocido"));
     } finally {
       setLoading(false);
     }
@@ -711,14 +1017,60 @@ export default function OrdenServicio() {
             <h2 className="text-xl font-semibold mb-4 text-gray-800">Nueva Orden de Servicio</h2>
 
             <form onSubmit={handleCrearOrden} className="space-y-4">
+
+              {/* Sede */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                  <BuildingOffice2Icon className="h-4 w-4 text-blue-600" />
+                  Sede *
+                </label>
+                {sedes.length === 0 ? (
+                  <div className="w-full px-4 py-2 flex items-center text-sm text-red-500 border border-red-300 rounded-lg bg-red-50">
+                    Sin sedes asignadas — contacta al administrador
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select
+                      name="codigoSede"
+                      value={formulario.codigoSede}
+                      onChange={handleInputChange}
+                      required
+                      className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Seleccionar sede...</option>
+                      {sedes.filter((s) => s.activo !== false).map((s) => (
+                        <option key={s.codigoSede} value={s.codigoSede}>
+                          {s.nombre} ({s.codigoSede}) — {s.ciudad || ''}
+                        </option>
+                      ))}
+                    </select>
+                    {formulario.codigoSede && (() => {
+                      const s = sedes.find((x) => x.codigoSede === formulario.codigoSede);
+                      if (!s) return null;
+                      const next = (s.consecutivoOrdenes ?? 0) + 1;
+                      const prefix = s.prefijoOrdenes || 'O';
+                      const preview = `${s.codigoSede}-${prefix}-${String(next).padStart(3, '0')}`;
+                      return (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">ID estimado:</span>
+                          <span className="font-mono text-sm font-bold bg-purple-50 border border-purple-200 text-purple-800 px-2 py-1 rounded">
+                            {preview}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Documento Cliente
+                  NIT / Documento Cliente
                 </label>
                 <input
                   type="text"
-                  name="documento"
-                  value={formulario.documento}
+                  name="nit"
+                  value={formulario.nit}
                   onChange={handleInputChange}
                   onKeyDown={handleDocumentoKeyDown}
                   placeholder="Ingresa y presiona Enter"
@@ -763,27 +1115,58 @@ export default function OrdenServicio() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tipo de Servicio
+                      Servicios de la Orden
                     </label>
-                    <select
-                      name="tipoServicio"
-                      value={formulario.tipoServicio}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {serviciosActivos.length > 0 ? (
-                        serviciosActivos.map((s) => (
-                          <option key={s.id} value={s.nombre}>{s.nombre}</option>
-                        ))
-                      ) : (
-                        // Fallback mientras cargan los servicios
-                        <>
-                          <option value="REPARACION">Reparación</option>
-                          <option value="MANTENIMIENTO">Mantenimiento</option>
-                          <option value="DIAGNOSTICO">Diagnóstico</option>
-                        </>
-                      )}
-                    </select>
+                    <div className="flex gap-2">
+                      <select
+                        value={servicioSeleccionadoKey}
+                        onChange={(e) => setServicioSeleccionadoKey(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Selecciona un servicio</option>
+                        {opcionesServicio.map((servicio) => (
+                          <option key={servicio.key} value={servicio.key}>
+                            {servicio.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleAgregarServicioOrden}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+                      >
+                        Agregar
+                      </button>
+                    </div>
+
+                    {serviciosSeleccionados.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {serviciosSeleccionados.map((servicio) => (
+                          <div
+                            key={servicio.key}
+                            className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-800">{servicio.nombre}</p>
+                              <p className="text-xs text-gray-500">
+                                Precio base: ${Number(servicio.precioBase || 0).toFixed(2)}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleQuitarServicioOrden(servicio.key)}
+                              className="text-sm font-medium text-red-600 hover:text-red-700"
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-amber-600">
+                        Agrega uno o más servicios a la orden.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -824,7 +1207,7 @@ export default function OrdenServicio() {
                 </>
               )}
 
-              {!clienteEncontrado && formulario.documento && (
+              {!clienteEncontrado && formulario.nit && (
                 <p className="text-sm text-yellow-600">
                   Presiona Enter para buscar el cliente
                 </p>
@@ -930,7 +1313,307 @@ export default function OrdenServicio() {
     {selectedOrdenCierre && (
       <div className="space-y-6">
 
-        {/* ───────────────── PANEL SUPERIOR: VENTAS DE LA ORDEN ───────────────── */}
+        {/* ───────────────── CONTENIDO PRINCIPAL (COLUMNAS) ───────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* ─── COLUMNA IZQUIERDA: Cierre técnico ─── */}
+          <div className="space-y-4">
+            <h3 className="text-base font-semibold text-gray-700 border-b border-gray-200 pb-2">
+            {selectedDetalleId ? "Cierre Técnico del Servicio" : "Servicios de la Orden"}
+            </h3>
+
+          {!selectedDetalleId ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-500">
+                Doble click sobre el nombre de un servicio para abrir su cierre técnico.
+              </p>
+
+              {cierreDetalles.length === 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                  Esta orden no tiene servicios cargados.
+                </div>
+              ) : (
+                cierreDetalles.map((detalle) => {
+                  const semaforo = getDetalleSemaforo(detalle);
+                  return (
+                    <div
+                      key={detalle.id}
+                      className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onDoubleClick={() => abrirFormularioDetalle(detalle)}
+                            className="text-left font-medium text-blue-700 hover:text-blue-800 hover:underline"
+                            title="Doble click para responder este servicio"
+                          >
+                            {detalle.servicioNombre || `Servicio ${detalle.regServicio || ""}`}
+                          </button>
+                          <p className="mt-1 text-xs text-gray-500">
+                            #{detalle.regServicio || "-"} {detalle.servicioCodigo ? `· ${detalle.servicioCodigo}` : ""}
+                          </p>
+                          <p className="mt-2 text-xs text-gray-600 line-clamp-2">
+                            {detalle.cierreTecnico?.trim() || "Sin respuesta técnica registrada."}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-2">
+                          <span className={`h-3 w-3 rounded-full ${semaforo.dot}`} />
+                          <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${semaforo.badge}`}>
+                            {semaforo.label}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                <p className="text-sm font-semibold text-blue-800">
+                  {detalleForm.servicioNombre || "Servicio"}
+                </p>
+                <p className="text-xs text-blue-700">
+                  #{detalleForm.regServicio || "-"} {detalleForm.servicioCodigo ? `· ${detalleForm.servicioCodigo}` : ""}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Cierre Técnico
+                </label>
+                <textarea
+                  value={detalleForm.cierreTecnico}
+                  onChange={(e) => handleDetalleFormChange("cierreTecnico", e.target.value)}
+                  rows="4"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Observaciones del Servicio
+                </label>
+                <textarea
+                  value={detalleForm.observaciones}
+                  onChange={(e) => handleDetalleFormChange("observaciones", e.target.value)}
+                  rows="3"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(detalleForm.diagnosticado)}
+                    onChange={(e) => handleDetalleFormChange("diagnosticado", e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                  />
+                  Diagnosticado
+                </label>
+
+                <label className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(detalleForm.reparado)}
+                    onChange={(e) => handleDetalleFormChange("reparado", e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  />
+                  Reparado
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleGuardarServicioSeleccionado}
+                  disabled={loading}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {loading ? "Procesando..." : "Guardar Servicio"}
+                </button>
+                <button
+                  type="button"
+                  onClick={cerrarFormularioDetalle}
+                  disabled={loading}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
+                >
+                  Volver a la Lista
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+          {/* ─── COLUMNA DERECHA: Registrar Venta ─── */}
+          <div className="space-y-4 border-l border-gray-200 pl-6">
+            <h3 className="text-base font-semibold text-gray-700 border-b border-gray-200 pb-2">
+              Registrar Venta
+            </h3>
+
+            {!can('sales.create') ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                Tu rol no tiene permiso para adjuntar ventas a esta orden.
+              </div>
+            ) : (
+              <>
+
+              {/* Datos del cliente (solo lectura, derivados de la orden) */}
+              {(() => {
+                const ord = ordenesTecnico.find((o) => o.id === selectedOrdenCierre);
+                if (!ord) return null;
+                return (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                    <p className="text-xs font-semibold text-blue-700 mb-1">Cliente de la orden</p>
+                    <p className="font-medium text-gray-800">
+                      {ord.clienteNombre} {ord.clienteApellido}
+                    </p>
+                    {ord.clienteTelefono && (
+                      <p className="text-gray-600 text-xs">{ord.clienteTelefono}</p>
+                    )}
+                    <p className="text-gray-500 text-xs">
+                      Doc: {ord.clienteId} ({ord.clienteTipoDocumentoId})
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      Sede: {ord.nombreSede || ord.codigoSede}
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {/* Agregar producto */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Código de producto
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={ventaProductoBuscado}
+                    onChange={(e) => setVentaProductoBuscado(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAgregarItemVenta(ventaProductoBuscado);
+                      }
+                      if (e.key === "F2") {
+                        e.preventDefault();
+                        setVentaProductFilter("");
+                        setShowVentaProductSearch(true);
+                      }
+                    }}
+                    placeholder="ID del producto (Enter para agregar)"
+                    className="flex-1 h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setVentaProductFilter(""); setShowVentaProductSearch(true); }}
+                    className="h-9 px-3 text-sm bg-gray-100 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-200"
+                    title="F2 para buscar"
+                  >
+                    Buscar
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">Enter agrega por ID · F2 o "Buscar" abre el buscador</p>
+              </div>
+
+              {/* Tabla de ítems a registrar */}
+              {ventaItems.length > 0 ? (
+                <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-52 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-700">Producto</th>
+                        <th className="px-3 py-2 text-center font-semibold text-gray-700">Cant.</th>
+                        <th className="px-3 py-2 text-right font-semibold text-gray-700">Precio</th>
+                        <th className="px-3 py-2 text-right font-semibold text-gray-700">Subtotal</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {ventaItems.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="px-3 py-1.5 text-xs">{item.nombre}</td>
+                          <td className="px-3 py-1.5 text-center">
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.cantidad}
+                              onChange={(e) => {
+                                const val = Math.max(1, parseInt(e.target.value) || 1);
+                                setVentaItems((prev) => prev.map((i, j) => j === idx ? { ...i, cantidad: val } : i));
+                              }}
+                              className="w-14 text-center text-xs border border-gray-300 rounded px-1 py-0.5"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.precioUnitario}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                setVentaItems((prev) => prev.map((i, j) => j === idx ? { ...i, precioUnitario: val } : i));
+                              }}
+                              className="w-20 text-right text-xs border border-gray-300 rounded px-1 py-0.5"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-xs font-medium">
+                            ${(item.cantidad * Number(item.precioUnitario)).toFixed(2)}
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarItemVenta(idx)}
+                              className="text-red-500 hover:text-red-700 text-xs"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t border-gray-200">
+                      <tr>
+                        <td colSpan="3" className="px-3 py-2 text-right text-sm font-semibold text-gray-700">Total:</td>
+                        <td className="px-3 py-2 text-right text-sm font-bold text-gray-900">
+                          ${calcularTotalVenta().toFixed(2)}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 italic">No hay productos agregados</p>
+              )}
+
+              {/* Observaciones venta */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Observaciones</label>
+                <textarea
+                  value={ventaObservaciones}
+                  onChange={(e) => setVentaObservaciones(e.target.value)}
+                  rows="2"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <button
+                onClick={handleRegistrarVentaOrden}
+                disabled={loading || ventaItems.length === 0}
+                className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+              >
+                {loading ? "Registrando..." : "Registrar Venta"}
+              </button>
+              </>
+            )}
+            {/* ───────────────── PANEL SUPERIOR: VENTAS DE LA ORDEN ───────────────── */}
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-800">
@@ -951,7 +1634,7 @@ export default function OrdenServicio() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                   </svg>
-                  PDF
+                  IMPRIMIR FACTURA
                 </button>
               )}
             </div>
@@ -1019,282 +1702,7 @@ export default function OrdenServicio() {
             </div>
           )}
         </div>
-
-        {/* ───────────────── CONTENIDO PRINCIPAL (COLUMNAS) ───────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-          {/* ─── COLUMNA IZQUIERDA: Cierre técnico ─── */}
-          <div className="space-y-4">
-            <h3 className="text-base font-semibold text-gray-700 border-b border-gray-200 pb-2">
-              Cierre Técnico
-            </h3>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Diagnóstico
-              </label>
-              <textarea
-                value={cierreForm.diagnostico}
-                onChange={(e) =>
-                  setCierreForm((p) => ({
-                    ...p,
-                    diagnostico: e.target.value,
-                  }))
-                }
-                rows="3"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Solución
-              </label>
-              <textarea
-                value={cierreForm.solucion}
-                onChange={(e) =>
-                  setCierreForm((p) => ({
-                    ...p,
-                    solucion: e.target.value,
-                  }))
-                }
-                rows="3"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Partes Cambiadas
-              </label>
-              <input
-                type="text"
-                value={cierreForm.partesCambiadas}
-                onChange={(e) =>
-                  setCierreForm((p) => ({
-                    ...p,
-                    partesCambiadas: e.target.value,
-                  }))
-                }
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Garantía (días)
-              </label>
-              <input
-                type="number"
-                value={cierreForm.garantiaServicio}
-                onChange={(e) =>
-                  setCierreForm((p) => ({
-                    ...p,
-                    garantiaServicio: parseInt(e.target.value) || 0,
-                  }))
-                }
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Observaciones
-              </label>
-              <textarea
-                value={cierreForm.observaciones}
-                onChange={(e) =>
-                  setCierreForm((p) => ({
-                    ...p,
-                    observaciones: e.target.value,
-                  }))
-                }
-                rows="2"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <button
-              onClick={() =>
-                handleGuardarCierreConEstado(
-                  "EN_PROCESO",
-                  "Información guardada y orden en proceso"
-                )
-              }
-              disabled={loading}
-              className="w-full py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
-            >
-              {loading ? "Procesando..." : "Salvar"}
-            </button>
-
-            <button
-              onClick={() =>
-                handleGuardarCierreConEstado(
-                  "REPARADO",
-                  "Orden cerrada y marcada como REPARADO"
-                )
-              }
-              disabled={loading}
-              className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? "Procesando..." : "Cerrar"}
-            </button>
           </div>
-
-          {/* ─── COLUMNA DERECHA: Registrar Venta ─── */}
-          <div className="space-y-4 border-l border-gray-200 pl-6">
-            <h3 className="text-base font-semibold text-gray-700 border-b border-gray-200 pb-2">
-              Registrar Venta
-            </h3>
-
-            {/* Datos del cliente (solo lectura, derivados de la orden) */}
-            {(() => {
-              const ord = ordenesTecnico.find((o) => o.id === selectedOrdenCierre);
-              if (!ord) return null;
-              return (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
-                  <p className="text-xs font-semibold text-blue-700 mb-1">Cliente de la orden</p>
-                  <p className="font-medium text-gray-800">
-                    {ord.clienteNombre} {ord.clienteApellido}
-                  </p>
-                  {ord.clienteTelefono && (
-                    <p className="text-gray-600 text-xs">{ord.clienteTelefono}</p>
-                  )}
-                  <p className="text-gray-500 text-xs">
-                    Doc: {ord.clienteId} ({ord.clienteTipoDocumentoId})
-                  </p>
-                </div>
-              );
-            })()}
-
-            {/* Agregar producto */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Código de producto
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={ventaProductoBuscado}
-                  onChange={(e) => setVentaProductoBuscado(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAgregarItemVenta(ventaProductoBuscado);
-                    }
-                    if (e.key === "F2") {
-                      e.preventDefault();
-                      setVentaProductFilter("");
-                      setShowVentaProductSearch(true);
-                    }
-                  }}
-                  placeholder="ID del producto (Enter para agregar)"
-                  className="flex-1 h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => { setVentaProductFilter(""); setShowVentaProductSearch(true); }}
-                  className="h-9 px-3 text-sm bg-gray-100 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-200"
-                  title="F2 para buscar"
-                >
-                  Buscar
-                </button>
-              </div>
-              <p className="text-[11px] text-gray-500 mt-1">Enter agrega por ID · F2 o "Buscar" abre el buscador</p>
-            </div>
-
-            {/* Tabla de ítems a registrar */}
-            {ventaItems.length > 0 ? (
-              <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-52 overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Producto</th>
-                      <th className="px-3 py-2 text-center font-semibold text-gray-700">Cant.</th>
-                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Precio</th>
-                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Subtotal</th>
-                      <th className="px-3 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {ventaItems.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="px-3 py-1.5 text-xs">{item.nombre}</td>
-                        <td className="px-3 py-1.5 text-center">
-                          <input
-                            type="number"
-                            min="1"
-                            value={item.cantidad}
-                            onChange={(e) => {
-                              const val = Math.max(1, parseInt(e.target.value) || 1);
-                              setVentaItems((prev) => prev.map((i, j) => j === idx ? { ...i, cantidad: val } : i));
-                            }}
-                            className="w-14 text-center text-xs border border-gray-300 rounded px-1 py-0.5"
-                          />
-                        </td>
-                        <td className="px-3 py-1.5 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.precioUnitario}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setVentaItems((prev) => prev.map((i, j) => j === idx ? { ...i, precioUnitario: val } : i));
-                            }}
-                            className="w-20 text-right text-xs border border-gray-300 rounded px-1 py-0.5"
-                          />
-                        </td>
-                        <td className="px-3 py-1.5 text-right text-xs font-medium">
-                          ${(item.cantidad * Number(item.precioUnitario)).toFixed(2)}
-                        </td>
-                        <td className="px-3 py-1.5 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleEliminarItemVenta(idx)}
-                            className="text-red-500 hover:text-red-700 text-xs"
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50 border-t border-gray-200">
-                    <tr>
-                      <td colSpan="3" className="px-3 py-2 text-right text-sm font-semibold text-gray-700">Total:</td>
-                      <td className="px-3 py-2 text-right text-sm font-bold text-gray-900">
-                        ${calcularTotalVenta().toFixed(2)}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400 italic">No hay productos agregados</p>
-            )}
-
-            {/* Observaciones venta */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Observaciones</label>
-              <textarea
-                value={ventaObservaciones}
-                onChange={(e) => setVentaObservaciones(e.target.value)}
-                rows="2"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <button
-              onClick={handleRegistrarVentaOrden}
-              disabled={loading || ventaItems.length === 0}
-              className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-            >
-              {loading ? "Registrando..." : "Registrar Venta"}
-            </button>
-          </div>
-
         </div>
       </div>
     )}
@@ -1305,7 +1713,7 @@ export default function OrdenServicio() {
           <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl">
             <h2 className="text-xl font-semibold mb-4 text-gray-800">Entregar Orden</h2>
             <p className="text-sm text-gray-500 mb-4">
-              Se muestran las órdenes listas para entregar al cliente (estado LISTA o REPARADA).
+              Solo se muestran órdenes cuyo estado es LISTA o REPARADA y que tienen todos sus servicios marcados como REPARADO.
             </p>
 
             <div className="mb-4">
@@ -1320,7 +1728,7 @@ export default function OrdenServicio() {
                 <option value="">-- Selecciona una orden --</option>
                 {ordenesParaEntregar.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.id} — {o.clienteNombre || o.documento || "-"} — {o.estado}
+                    {o.id} — {o.clienteNombre || o.nit || "-"} — {o.estado}
                   </option>
                 ))}
               </select>
@@ -1442,13 +1850,13 @@ export default function OrdenServicio() {
               </div>
               <div className="p-6">
                 <p className="text-sm text-gray-600 mb-3">
-                  Se encontraron varias coincidencias para el documento. Doble click para seleccionar.
+                  Se encontraron varias coincidencias para el nit. Doble click para seleccionar.
                 </p>
                 <div className="overflow-x-auto border border-gray-200 rounded">
                   <table className="w-full">
                     <thead className="bg-gray-100 border-b border-gray-200">
                       <tr>
-                        <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Documento</th>
+                        <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">NIT/Documento</th>
                         <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Tipo</th>
                         <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Nombre</th>
                         <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Telefono</th>
@@ -1457,11 +1865,11 @@ export default function OrdenServicio() {
                     <tbody className="divide-y divide-gray-200">
                       {clientMatches.map((cliente) => (
                         <tr
-                          key={`${cliente.documento}-${cliente.tipoDocumentoId || ""}`}
+                          key={`${cliente.nit}-${cliente.tipoDocumentoId || ""}`}
                           onDoubleClick={() => seleccionarCliente(cliente)}
                           className="hover:bg-gray-50 cursor-pointer"
                         >
-                          <td className="px-4 py-2 text-sm text-gray-900">{cliente.documento}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900">{cliente.nit}</td>
                           <td className="px-4 py-2 text-sm text-gray-900">
                             {cliente.tipoDocumentoName || "-"}
                           </td>

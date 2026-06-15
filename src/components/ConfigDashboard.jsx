@@ -3,6 +3,7 @@ import api from './utils/axiosConfig';
 import { usePermissions } from './utils/PermissionsContext';
 import ReportesModule from './ReportesModule';
 import MiscManager from './MiscManager';
+import SedesManager from './SedesManager';
 import {
   UsersIcon,
   ArchiveBoxIcon,
@@ -17,6 +18,7 @@ import {
   ShieldCheckIcon,
   WrenchScrewdriverIcon,
   BuildingOfficeIcon,
+  BuildingOffice2Icon,
   TagIcon,
 } from '@heroicons/react/24/outline';
 
@@ -24,6 +26,7 @@ const CONFIG_OPTIONS = [
   { id: 'permisos',      label: 'Permisos por rol',                perm: 'config.roles.read',          Icon: ShieldCheckIcon },
   { id: 'reportes',      label: 'Reportes',                        perm: 'reports.read',               Icon: DocumentChartBarIcon },
   { id: 'misc',          label: 'Misceláneas',                     perm: 'config.user-types.read',     Icon: ArchiveBoxIcon },
+  { id: 'sedes',         label: 'Sedes',                           perm: 'config.sedes.read',          Icon: BuildingOffice2Icon },
 ];
 
 const MODULE_CONFIG = [
@@ -563,7 +566,11 @@ export default function ConfigDashboard() {
             <MiscManager />
           )}
 
-          {activeOption !== 'permisos' && activeOption !== 'reportes' && activeOption !== 'misc' && (
+          {activeOption === 'sedes' && (
+            <SedesManager />
+          )}
+
+          {activeOption !== 'permisos' && activeOption !== 'reportes' && activeOption !== 'misc' && activeOption !== 'sedes' && (
             <div className="text-sm text-gray-500">
               Esta seccion estara disponible proximamente.
             </div>

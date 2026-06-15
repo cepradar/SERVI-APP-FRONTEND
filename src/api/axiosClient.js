@@ -50,6 +50,8 @@ axiosClient.interceptors.response.use(
       localStorage.removeItem('authToken');
       localStorage.removeItem('userRole');
       localStorage.removeItem('username');
+      localStorage.removeItem('userSedes');
+      localStorage.removeItem('sedeActual');
       window.location.replace('/login');
       return Promise.reject(error);
     }

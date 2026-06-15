@@ -17,7 +17,7 @@ function LandingPage() {
     firstName: '',
     lastName: '',
     telefono: '',
-    documento: '',
+    nit: '',
     tipoDocumentoId: 'CC',
     direccion: '',
     ciudad: '',
@@ -421,7 +421,7 @@ function LandingPage() {
                       firstName: registerForm.firstName,
                       lastName: registerForm.lastName,
                       telefono: registerForm.telefono,
-                      documento: registerForm.documento,
+                      nit: registerForm.nit,
                       tipoDocumento: registerForm.tipoDocumentoId || 'CC',
                       direccion: registerForm.direccion || '',
                       ciudad: registerForm.ciudad || '',
@@ -487,8 +487,8 @@ function LandingPage() {
                       type="text"
                       placeholder="N° documento"
                       required
-                      value={registerForm.documento}
-                      onChange={(e) => setRegisterForm({ ...registerForm, documento: e.target.value })}
+                      value={registerForm.nit}
+                      onChange={(e) => setRegisterForm({ ...registerForm, nit: e.target.value })}
                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
                     />
                     <select

@@ -2,10 +2,13 @@ import React, { useState, useEffect, useMemo } from "react";
 import api from "./utils/axiosConfig";
 import DataTable from "./DataTable";
 import { usePermissions } from './utils/PermissionsContext';
+import { useSedes } from '../context/SedesContext';
+import { BuildingOffice2Icon } from '@heroicons/react/24/outline';
 
 const SalesModule = () => {
   const { permissions } = usePermissions();
   const can = (c) => permissions.includes(c);
+  const { sedes, sedeActual } = useSedes();
   const [ventas, setVentas] = useState([]);
   const [productos, setProductos] = useState([]);
 
@@ -34,13 +37,21 @@ const SalesModule = () => {
   });
 
   const [formulario, setFormulario] = useState({
-    documento: "",
+    codigoSede: sedeActual?.codigoSede || '',
+    nit: "",
     nombreComprador: "",
     telefonoComprador: "",
     emailComprador: "",
     observaciones: "",
     items: []
   });
+
+  // Sincronizar sede actual cuando cambie el contexto
+  useEffect(() => {
+    if (sedeActual?.codigoSede) {
+      setFormulario((prev) => ({ ...prev, codigoSede: sedeActual.codigoSede }));
+    }
+  }, [sedeActual]);
 
   // Cargar ventas y productos al montar
   useEffect(() => {
@@ -72,7 +83,7 @@ const SalesModule = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    if (name === "documento") {
+    if (name === "nit") {
       setClienteEncontrado(null);
       setPriceEditItemId(null);
       setPendingPriceItemId(null);
@@ -84,18 +95,18 @@ const SalesModule = () => {
   const handleDocumentoKeyDown = async (e) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    await fetchClienteByDocumento(formulario.documento);
+    await fetchClienteByNit(formulario.nit);
   };
 
-  const fetchClienteByDocumento = async (documento) => {
-    if (!documento || !documento.trim()) {
-      setError("Ingresa un documento válido");
+  const fetchClienteByNit = async (nit) => {
+    if (!nit || !nit.trim()) {
+      setError("Ingresa un nit válido");
       return;
     }
 
     try {
       setError("");
-      const response = await api.get(`/api/clientes/${documento.trim()}`);
+      const response = await api.get(`/api/clientes/${nit.trim()}`);
       const data = response.data;
 
       if (Array.isArray(data)) {
@@ -106,7 +117,7 @@ const SalesModule = () => {
           setShowClientMatches(true);
         } else {
           setClienteEncontrado(null);
-          setError("Cliente no encontrado con ese documento");
+          setError("Cliente no encontrado con ese nit");
         }
         return;
       }
@@ -115,11 +126,11 @@ const SalesModule = () => {
         seleccionarCliente(data);
       } else {
         setClienteEncontrado(null);
-        setError("Cliente no encontrado con ese documento");
+        setError("Cliente no encontrado con ese nit");
       }
     } catch (err) {
       setClienteEncontrado(null);
-      setError("Cliente no encontrado con ese documento");
+      setError("Cliente no encontrado con ese nit");
     }
   };
 
@@ -127,7 +138,7 @@ const SalesModule = () => {
     setClienteEncontrado(cliente);
     setFormulario((prev) => ({
       ...prev,
-      documento: cliente?.documento || prev.documento,
+      nit: cliente?.nit || prev.nit,
       nombreComprador: cliente?.nombre || prev.nombreComprador,
       telefonoComprador: cliente?.telefono || "",
       emailComprador: cliente?.email || ""
@@ -169,7 +180,7 @@ const SalesModule = () => {
   const getCategoryId = (producto) =>
     producto?.categoryId || producto?.category?.id || "";
 
-  const clienteValido = Boolean(clienteEncontrado?.documento);
+  const clienteValido = Boolean(clienteEncontrado?.nit);
 
   const handleAddItemByCode = () => {
     if (!clienteValido) {
@@ -316,14 +327,20 @@ const SalesModule = () => {
 
     try {
       // Validaciones
-      if (!formulario.documento || !clienteEncontrado) {
-        setError("Debes ingresar un documento válido y cargar el cliente");
+      if (!formulario.nit || !clienteEncontrado) {
+        setError("Debes ingresar un nit válido y cargar el cliente");
         setLoading(false);
         return;
       }
 
-      if (!clienteEncontrado?.documento || !clienteEncontrado?.tipoDocumentoId) {
-        setError("El cliente seleccionado no tiene documento o tipo de documento");
+      if (!formulario.codigoSede) {
+        setError("Debes seleccionar una sede");
+        setLoading(false);
+        return;
+      }
+
+      if (!clienteEncontrado?.nit || !clienteEncontrado?.tipoDocumentoId) {
+        setError("El cliente seleccionado no tiene nit o tipo de documento");
         setLoading(false);
         return;
       }
@@ -361,7 +378,8 @@ const SalesModule = () => {
       }
 
       const payload = {
-        clienteId: clienteEncontrado.documento,
+        codigoSede: formulario.codigoSede,
+        clienteId: clienteEncontrado.nit,
         clienteTipoDocumento: clienteEncontrado.tipoDocumentoId,
         // usuarioUsername es ignorado por el backend — se toma del JWT
         observaciones: formulario.observaciones,
@@ -381,7 +399,8 @@ const SalesModule = () => {
 
       // Limpiar formulario
       setFormulario({
-        documento: "",
+        codigoSede: sedeActual?.codigoSede || '',
+        nit: "",
         nombreComprador: "",
         telefonoComprador: "",
         emailComprador: "",
@@ -534,15 +553,65 @@ const SalesModule = () => {
           <div className="mb-6 bg-white p-4 md:p-5 rounded-lg shadow">
             <h2 className="text-xl font-semibold mb-3 text-gray-900">Registrar Nueva Venta</h2>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Documento */}
+
+              {/* Sede */}
+              <div className="md:col-span-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      <span className="flex items-center gap-1">
+                        <BuildingOffice2Icon className="h-3.5 w-3.5 text-blue-600" />
+                        Sede *
+                      </span>
+                    </label>
+                    {sedes.length === 0 ? (
+                      <div className="w-full h-9 px-3 flex items-center text-sm text-red-500 border border-red-300 rounded-lg bg-red-50">
+                        Sin sedes asignadas — contacta al administrador
+                      </div>
+                    ) : (
+                      <select
+                        name="codigoSede"
+                        value={formulario.codigoSede}
+                        onChange={handleInputChange}
+                        required
+                        className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      >
+                        <option value="">Seleccionar sede...</option>
+                        {sedes.filter((s) => s.activo !== false).map((s) => (
+                          <option key={s.codigoSede} value={s.codigoSede}>
+                            {s.nombre} ({s.codigoSede}) — {s.ciudad || ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  {formulario.codigoSede && (() => {
+                    const s = sedes.find((x) => x.codigoSede === formulario.codigoSede);
+                    if (!s) return null;
+                    const next = (s.consecutivoVentas ?? 0) + 1;
+                    const prefix = s.prefijoVentas || 'V';
+                    const preview = `${s.codigoSede}-${prefix}-${String(next).padStart(3, '0')}`;
+                    return (
+                      <div className="flex items-center gap-2 pb-1">
+                        <span className="text-xs text-gray-500">ID estimado:</span>
+                        <span className="font-mono text-sm font-bold bg-blue-50 border border-blue-200 text-blue-800 px-2 py-1 rounded">
+                          {preview}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* NIT/Documento */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Documento *
+                  NIT / Documento *
                 </label>
                 <input
                   type="text"
-                  name="documento"
-                  value={formulario.documento}
+                  name="nit"
+                  value={formulario.nit}
                   onChange={handleInputChange}
                   onKeyDown={handleDocumentoKeyDown}
                   className="w-full h-9 px-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
@@ -848,7 +917,7 @@ const SalesModule = () => {
                   <table className="w-full">
                     <thead className="bg-gray-100 border-b border-gray-200">
                       <tr>
-                        <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Documento</th>
+                        <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">NIT/Documento</th>
                         <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Tipo</th>
                         <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Nombre</th>
                         <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900">Telefono</th>
@@ -857,11 +926,11 @@ const SalesModule = () => {
                     <tbody className="divide-y divide-gray-200">
                       {clientMatches.map((cliente) => (
                         <tr
-                          key={`${cliente.documento}-${cliente.tipoDocumentoId || ""}`}
+                          key={`${cliente.nit}-${cliente.tipoDocumentoId || ""}`}
                           onDoubleClick={() => seleccionarCliente(cliente)}
                           className="hover:bg-gray-50 cursor-pointer"
                         >
-                          <td className="px-4 py-2 text-sm text-gray-900">{cliente.documento}</td>
+                          <td className="px-4 py-2 text-sm text-gray-900">{cliente.nit}</td>
                           <td className="px-4 py-2 text-sm text-gray-900">
                             {cliente.tipoDocumentoName || "-"}
                           </td>

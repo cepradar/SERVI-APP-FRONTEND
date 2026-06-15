@@ -4,6 +4,8 @@ const authService = {
   login: (username, password) =>
     axiosClient.post('/auth/login', { username, password }),
 
+  getCurrentUser: () => axiosClient.get('/auth/me'),
+
   register: (data) => axiosClient.post('/auth/register', data),
 
   getProfilePicture: (username) =>

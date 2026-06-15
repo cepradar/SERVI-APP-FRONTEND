@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axiosClient from '../../api/axiosClient';
 import { usePermissions } from '../../context/PermissionsContext';
+import { useSedes } from '../../context/SedesContext';
 import { useCompanyInfo } from '../../hooks/useCompanyInfo';
 
 function Login() {
@@ -13,6 +14,7 @@ function Login() {
 
   const navigate = useNavigate();
   const { reload: reloadPermissions } = usePermissions();
+  const { reload: reloadSedes }       = useSedes();
   const { companyInfo, logoUrl: companyLogo2Url } = useCompanyInfo('logo2');
 
   const companyName = companyInfo?.razonSocial || '';
@@ -32,12 +34,27 @@ function Login() {
 
     try {
       const response = await axiosClient.post('/auth/login', { username, password });
-      const { token, role, username: serverUsername } = response.data;
+      const {
+        token,
+        role,
+        username: serverUsername,
+        displayName,
+        fullName,
+        firstName,
+        lastName,
+        name,
+      } = response.data;
+      const resolvedName = fullName || [firstName, lastName].filter(Boolean).join(' ').trim();
       localStorage.setItem('authToken', token);
       localStorage.setItem('userRole', role);
       localStorage.setItem('username', serverUsername || username.toUpperCase());
+      localStorage.setItem('displayName', resolvedName || displayName || name || '');
+      localStorage.setItem('fullName', fullName || resolvedName || '');
+      localStorage.setItem('firstName', firstName || '');
+      localStorage.setItem('lastName', lastName || '');
       await reloadPermissions();
-      setMessage(`Bienvenido, ${username}`);
+      await reloadSedes();
+      setMessage(`Bienvenido, ${resolvedName || displayName || name || 'Usuario'}`);
       setLoginStatus('success');
       navigate('/dashboard');
     } catch (error) {

@@ -18,6 +18,7 @@ export default function AdminNavbar({
   activeModule,
   onHomeClick,
   companyName,
+  userName,
   onMenuToggle,
 }) {
   const { isMobile } = useMobile();
@@ -54,7 +55,7 @@ export default function AdminNavbar({
 
       {/* Derecha: perfil */}
       <div className="flex-shrink-0">
-        <ProfileMenu />
+        <ProfileMenu userName={userName} />
       </div>
     </header>
   );
